@@ -43,6 +43,7 @@ import { AmazonRecoveryVerificationService } from './services/amazonRecoveryVeri
 import { DesignerService } from './services/designerService';
 import { DesignerConceptService } from './services/designerConceptService';
 import { AmazonDeleteDesignService } from './services/amazonDeleteDesignService';
+import { CleanupService } from './services/cleanupService';
 
 dotenv.config();
 
@@ -1338,6 +1339,50 @@ app.post('/api/v1/tasks/:taskId/amazon-delete', async (req, res) => {
   } catch (err: any) {
     console.error(`[TaskAction] Fehler bei amazon-delete für Task ${taskId}:`, err);
     res.status(500).json({ success: false, error: err.message || 'Interner Serverfehler beim Löschen auf Amazon.' });
+  }
+});
+
+// --- CleanUp API Routes ---
+app.get('/api/v1/cleanup/stats', (_req, res) => {
+  try {
+    const totalReviewed = CleanupService.getReviewedCount();
+    res.json({ success: true, totalReviewed });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/cleanup/scan', async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(20, Number(req.body?.limit) || 10));
+    const result = await CleanupService.scanRandomDesigns(limit);
+    res.json(result);
+  } catch (err: any) {
+    console.error('[CleanUp] Fehler beim Scannen:', err);
+    res.status(500).json({ success: false, error: err.message || 'Fehler beim Scannen von Designs.' });
+  }
+});
+
+app.post('/api/v1/cleanup/process', async (req, res) => {
+  try {
+    const actions = req.body?.actions;
+    if (!Array.isArray(actions)) {
+      return res.status(400).json({ success: false, error: 'Ungültiges Aktions-Array übergeben.' });
+    }
+    const result = await CleanupService.processBatch(actions);
+    res.json(result);
+  } catch (err: any) {
+    console.error('[CleanUp] Fehler beim Verarbeiten:', err);
+    res.status(500).json({ success: false, error: err.message || 'Fehler beim Verarbeiten.' });
+  }
+});
+
+app.post('/api/v1/cleanup/reset-reviewed', (_req, res) => {
+  try {
+    const result = CleanupService.clearReviewedList();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

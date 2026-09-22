@@ -12,6 +12,7 @@ import { SettingsView } from './views/SettingsView';
 import { PromptLogView } from './views/PromptLogView';
 import { SystemPromptsView } from './views/SystemPromptsView';
 import { TrademarkView } from './views/TrademarkView';
+import { CleanView } from './views/CleanView';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -113,6 +114,11 @@ export const App: React.FC = () => {
               {visitedTabs.has('database') && (
                 <div className={activeTab === 'database' ? 'block' : 'hidden'}>
                   <DatabaseView />
+                </div>
+              )}
+              {visitedTabs.has('clean') && (
+                <div className={activeTab === 'clean' ? 'block' : 'hidden'}>
+                  <CleanView />
                 </div>
               )}
               {visitedTabs.has('logs') && (

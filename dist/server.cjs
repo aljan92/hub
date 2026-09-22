@@ -2485,8 +2485,8 @@ var require_node = __commonJS2({
           }
           break;
         case "FILE":
-          var fs26 = require("fs");
-          stream2 = new fs26.SyncWriteStream(fd2, { autoClose: false });
+          var fs27 = require("fs");
+          stream2 = new fs27.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -15273,11 +15273,11 @@ var require_mime_types = __commonJS2({
       }
       return exts[0];
     }
-    function lookup(path24) {
-      if (!path24 || typeof path24 !== "string") {
+    function lookup(path25) {
+      if (!path25 || typeof path25 !== "string") {
         return false;
       }
-      var extension3 = extname("x." + path24).toLowerCase().substr(1);
+      var extension3 = extname("x." + path25).toLowerCase().substr(1);
       if (!extension3) {
         return false;
       }
@@ -18918,8 +18918,8 @@ var require_node2 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs26 = require("fs");
-          stream2 = new fs26.SyncWriteStream(fd2, { autoClose: false });
+          var fs27 = require("fs");
+          stream2 = new fs27.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -19637,8 +19637,8 @@ var require_node3 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs26 = require("fs");
-          stream2 = new fs26.SyncWriteStream(fd2, { autoClose: false });
+          var fs27 = require("fs");
+          stream2 = new fs27.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -19726,7 +19726,7 @@ var require_path_to_regexp = __commonJS2({
   "node_modules/path-to-regexp/index.js"(exports2, module3) {
     module3.exports = pathToRegexp;
     var MATCHING_GROUP_REGEXP = /\\.|\((?:\?<(.*?)>)?(?!\?)/g;
-    function pathToRegexp(path24, keys, options2) {
+    function pathToRegexp(path25, keys, options2) {
       options2 = options2 || {};
       keys = keys || [];
       var strict = options2.strict;
@@ -19740,8 +19740,8 @@ var require_path_to_regexp = __commonJS2({
       var pos = 0;
       var backtrack = "";
       var m;
-      if (path24 instanceof RegExp) {
-        while (m = MATCHING_GROUP_REGEXP.exec(path24.source)) {
+      if (path25 instanceof RegExp) {
+        while (m = MATCHING_GROUP_REGEXP.exec(path25.source)) {
           if (m[0][0] === "\\") continue;
           keys.push({
             name: m[1] || name++,
@@ -19749,18 +19749,18 @@ var require_path_to_regexp = __commonJS2({
             offset: m.index
           });
         }
-        return path24;
+        return path25;
       }
-      if (Array.isArray(path24)) {
-        path24 = path24.map(function(value2) {
+      if (Array.isArray(path25)) {
+        path25 = path25.map(function(value2) {
           return pathToRegexp(value2, keys, options2).source;
         });
-        return new RegExp(path24.join("|"), flags);
+        return new RegExp(path25.join("|"), flags);
       }
-      if (typeof path24 !== "string") {
+      if (typeof path25 !== "string") {
         throw new TypeError("path must be a string, array of strings, or regular expression");
       }
-      path24 = path24.replace(
+      path25 = path25.replace(
         /\\.|(\/)?(\.)?:(\w+)(\(.*?\))?(\*)?(\?)?|[.*]|\/\(/g,
         function(match, slash, format, key, capture, star, optional, offset) {
           if (match[0] === "\\") {
@@ -19777,7 +19777,7 @@ var require_path_to_regexp = __commonJS2({
           if (slash || format) {
             backtrack = "";
           } else {
-            backtrack += path24.slice(pos, offset);
+            backtrack += path25.slice(pos, offset);
           }
           pos = offset + match.length;
           if (match === "*") {
@@ -19807,7 +19807,7 @@ var require_path_to_regexp = __commonJS2({
           return result2;
         }
       );
-      while (m = MATCHING_GROUP_REGEXP.exec(path24)) {
+      while (m = MATCHING_GROUP_REGEXP.exec(path25)) {
         if (m[0][0] === "\\") continue;
         if (keysOffset + i === keys.length || keys[keysOffset + i].offset > m.index) {
           keys.splice(keysOffset + i, 0, {
@@ -19819,13 +19819,13 @@ var require_path_to_regexp = __commonJS2({
         }
         i++;
       }
-      path24 += strict ? "" : path24[path24.length - 1] === "/" ? "?" : "/?";
+      path25 += strict ? "" : path25[path25.length - 1] === "/" ? "?" : "/?";
       if (end) {
-        path24 += "$";
-      } else if (path24[path24.length - 1] !== "/") {
-        path24 += lookahead ? "(?=/|$)" : "(?:/|$)";
+        path25 += "$";
+      } else if (path25[path25.length - 1] !== "/") {
+        path25 += lookahead ? "(?=/|$)" : "(?:/|$)";
       }
-      return new RegExp("^" + path24, flags);
+      return new RegExp("^" + path25, flags);
     }
   }
 });
@@ -19838,19 +19838,19 @@ var require_layer = __commonJS2({
     var debug17 = require_src3()("express:router:layer");
     var hasOwnProperty2 = Object.prototype.hasOwnProperty;
     module3.exports = Layer;
-    function Layer(path24, options2, fn) {
+    function Layer(path25, options2, fn) {
       if (!(this instanceof Layer)) {
-        return new Layer(path24, options2, fn);
+        return new Layer(path25, options2, fn);
       }
-      debug17("new %o", path24);
+      debug17("new %o", path25);
       var opts = options2 || {};
       this.handle = fn;
       this.name = fn.name || "<anonymous>";
       this.params = void 0;
       this.path = void 0;
-      this.regexp = pathRegexp(path24, this.keys = [], opts);
-      this.regexp.fast_star = path24 === "*";
-      this.regexp.fast_slash = path24 === "/" && opts.end === false;
+      this.regexp = pathRegexp(path25, this.keys = [], opts);
+      this.regexp.fast_star = path25 === "*";
+      this.regexp.fast_slash = path25 === "/" && opts.end === false;
     }
     Layer.prototype.handle_error = function handle_error(error, req, res, next) {
       var fn = this.handle;
@@ -19874,20 +19874,20 @@ var require_layer = __commonJS2({
         next(err);
       }
     };
-    Layer.prototype.match = function match(path24) {
+    Layer.prototype.match = function match(path25) {
       var match2;
-      if (path24 != null) {
+      if (path25 != null) {
         if (this.regexp.fast_slash) {
           this.params = {};
           this.path = "";
           return true;
         }
         if (this.regexp.fast_star) {
-          this.params = { "0": decode_param(path24) };
-          this.path = path24;
+          this.params = { "0": decode_param(path25) };
+          this.path = path25;
           return true;
         }
-        match2 = this.regexp.exec(path24);
+        match2 = this.regexp.exec(path25);
       }
       if (!match2) {
         this.params = void 0;
@@ -19980,10 +19980,10 @@ var require_route = __commonJS2({
     var slice = Array.prototype.slice;
     var toString = Object.prototype.toString;
     module3.exports = Route3;
-    function Route3(path24) {
-      this.path = path24;
+    function Route3(path25) {
+      this.path = path25;
       this.stack = [];
-      debug17("new %o", path24);
+      debug17("new %o", path25);
       this.methods = {};
     }
     Route3.prototype._handles_method = function _handles_method(method) {
@@ -20195,8 +20195,8 @@ var require_router = __commonJS2({
         if (++sync > 100) {
           return setImmediate(next, err);
         }
-        var path24 = getPathname(req);
-        if (path24 == null) {
+        var path25 = getPathname(req);
+        if (path25 == null) {
           return done(layerError);
         }
         var layer;
@@ -20204,7 +20204,7 @@ var require_router = __commonJS2({
         var route2;
         while (match !== true && idx < stack.length) {
           layer = stack[idx++];
-          match = matchLayer(layer, path24);
+          match = matchLayer(layer, path25);
           route2 = layer.route;
           if (typeof match !== "boolean") {
             layerError = layerError || match;
@@ -20242,18 +20242,18 @@ var require_router = __commonJS2({
           } else if (route2) {
             layer.handle_request(req, res, next);
           } else {
-            trim_prefix(layer, layerError, layerPath, path24);
+            trim_prefix(layer, layerError, layerPath, path25);
           }
           sync = 0;
         });
       }
-      function trim_prefix(layer, layerError, layerPath, path24) {
+      function trim_prefix(layer, layerError, layerPath, path25) {
         if (layerPath.length !== 0) {
-          if (layerPath !== path24.slice(0, layerPath.length)) {
+          if (layerPath !== path25.slice(0, layerPath.length)) {
             next(layerError);
             return;
           }
-          var c = path24[layerPath.length];
+          var c = path25[layerPath.length];
           if (c && c !== "/" && c !== ".") return next(layerError);
           debug17("trim prefix (%s) from url %s", layerPath, req.url);
           removed = layerPath;
@@ -20331,7 +20331,7 @@ var require_router = __commonJS2({
     };
     proto.use = function use(fn) {
       var offset = 0;
-      var path24 = "/";
+      var path25 = "/";
       if (typeof fn !== "function") {
         var arg = fn;
         while (Array.isArray(arg) && arg.length !== 0) {
@@ -20339,7 +20339,7 @@ var require_router = __commonJS2({
         }
         if (typeof arg !== "function") {
           offset = 1;
-          path24 = fn;
+          path25 = fn;
         }
       }
       var callbacks = flatten(slice.call(arguments, offset));
@@ -20351,8 +20351,8 @@ var require_router = __commonJS2({
         if (typeof fn !== "function") {
           throw new TypeError("Router.use() requires a middleware function but got a " + gettype(fn));
         }
-        debug17("use %o %s", path24, fn.name || "<anonymous>");
-        var layer = new Layer(path24, {
+        debug17("use %o %s", path25, fn.name || "<anonymous>");
+        var layer = new Layer(path25, {
           sensitive: this.caseSensitive,
           strict: false,
           end: false
@@ -20362,9 +20362,9 @@ var require_router = __commonJS2({
       }
       return this;
     };
-    proto.route = function route2(path24) {
-      var route3 = new Route3(path24);
-      var layer = new Layer(path24, {
+    proto.route = function route2(path25) {
+      var route3 = new Route3(path25);
+      var layer = new Layer(path25, {
         sensitive: this.caseSensitive,
         strict: this.strict,
         end: true
@@ -20374,8 +20374,8 @@ var require_router = __commonJS2({
       return route3;
     };
     methods.concat("all").forEach(function(method) {
-      proto[method] = function(path24) {
-        var route2 = this.route(path24);
+      proto[method] = function(path25) {
+        var route2 = this.route(path25);
         route2[method].apply(route2, slice.call(arguments, 1));
         return this;
       };
@@ -20411,9 +20411,9 @@ var require_router = __commonJS2({
       }
       return toString.call(obj).replace(objectRegExp, "$1");
     }
-    function matchLayer(layer, path24) {
+    function matchLayer(layer, path25) {
       try {
-        return layer.match(path24);
+        return layer.match(path25);
       } catch (err) {
         return err;
       }
@@ -20531,13 +20531,13 @@ var require_view = __commonJS2({
   "node_modules/express/lib/view.js"(exports2, module3) {
     "use strict";
     var debug17 = require_src3()("express:view");
-    var path24 = require("path");
-    var fs26 = require("fs");
-    var dirname = path24.dirname;
-    var basename = path24.basename;
-    var extname = path24.extname;
-    var join = path24.join;
-    var resolve = path24.resolve;
+    var path25 = require("path");
+    var fs27 = require("fs");
+    var dirname = path25.dirname;
+    var basename = path25.basename;
+    var extname = path25.extname;
+    var join = path25.join;
+    var resolve = path25.resolve;
     module3.exports = View;
     function View(name, options2) {
       var opts = options2 || {};
@@ -20566,17 +20566,17 @@ var require_view = __commonJS2({
       this.path = this.lookup(fileName);
     }
     View.prototype.lookup = function lookup(name) {
-      var path25;
+      var path26;
       var roots = [].concat(this.root);
       debug17('lookup "%s"', name);
-      for (var i = 0; i < roots.length && !path25; i++) {
+      for (var i = 0; i < roots.length && !path26; i++) {
         var root = roots[i];
         var loc = resolve(root, name);
         var dir = dirname(loc);
         var file = basename(loc);
-        path25 = this.resolve(dir, file);
+        path26 = this.resolve(dir, file);
       }
-      return path25;
+      return path26;
     };
     View.prototype.render = function render(options2, callback) {
       debug17('render "%s"', this.path);
@@ -20584,21 +20584,21 @@ var require_view = __commonJS2({
     };
     View.prototype.resolve = function resolve2(dir, file) {
       var ext = this.ext;
-      var path25 = join(dir, file);
-      var stat = tryStat(path25);
+      var path26 = join(dir, file);
+      var stat = tryStat(path26);
       if (stat && stat.isFile()) {
-        return path25;
+        return path26;
       }
-      path25 = join(dir, basename(file, ext), "index" + ext);
-      stat = tryStat(path25);
+      path26 = join(dir, basename(file, ext), "index" + ext);
+      stat = tryStat(path26);
       if (stat && stat.isFile()) {
-        return path25;
+        return path26;
       }
     };
-    function tryStat(path25) {
-      debug17('stat "%s"', path25);
+    function tryStat(path26) {
+      debug17('stat "%s"', path26);
       try {
-        return fs26.statSync(path25);
+        return fs27.statSync(path26);
       } catch (e) {
         return void 0;
       }
@@ -21203,8 +21203,8 @@ var require_node4 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs26 = require("fs");
-          stream2 = new fs26.SyncWriteStream(fd2, { autoClose: false });
+          var fs27 = require("fs");
+          stream2 = new fs27.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -21376,8 +21376,8 @@ var require_types = __commonJS2({
 // node_modules/mime/mime.js
 var require_mime = __commonJS2({
   "node_modules/mime/mime.js"(exports2, module3) {
-    var path24 = require("path");
-    var fs26 = require("fs");
+    var path25 = require("path");
+    var fs27 = require("fs");
     function Mime() {
       this.types = /* @__PURE__ */ Object.create(null);
       this.extensions = /* @__PURE__ */ Object.create(null);
@@ -21398,7 +21398,7 @@ var require_mime = __commonJS2({
     };
     Mime.prototype.load = function(file) {
       this._loading = file;
-      var map = {}, content = fs26.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
+      var map = {}, content = fs27.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
       lines.forEach(function(line) {
         var fields = line.replace(/\s*#.*|^\s*|\s*$/g, "").split(/\s+/);
         map[fields.shift()] = fields;
@@ -21406,8 +21406,8 @@ var require_mime = __commonJS2({
       this.define(map);
       this._loading = null;
     };
-    Mime.prototype.lookup = function(path25, fallback) {
-      var ext = path25.replace(/^.*[\.\/\\]/, "").toLowerCase();
+    Mime.prototype.lookup = function(path26, fallback) {
+      var ext = path26.replace(/^.*[\.\/\\]/, "").toLowerCase();
       return this.types[ext] || fallback || this.default_type;
     };
     Mime.prototype.extension = function(mimeType) {
@@ -21636,33 +21636,33 @@ var require_send = __commonJS2({
     var escapeHtml = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
-    var fs26 = require("fs");
+    var fs27 = require("fs");
     var mime8 = require_mime();
     var ms = require_ms5();
     var onFinished = require_on_finished();
     var parseRange = require_range_parser();
-    var path24 = require("path");
+    var path25 = require("path");
     var statuses = require_statuses();
     var Stream2 = require("stream");
     var util2 = require("util");
-    var extname = path24.extname;
-    var join = path24.join;
-    var normalize = path24.normalize;
-    var resolve = path24.resolve;
-    var sep = path24.sep;
+    var extname = path25.extname;
+    var join = path25.join;
+    var normalize = path25.normalize;
+    var resolve = path25.resolve;
+    var sep = path25.sep;
     var BYTES_RANGE_REGEXP = /^ *bytes=/;
     var MAX_MAXAGE = 60 * 60 * 24 * 365 * 1e3;
     var UP_PATH_REGEXP = /(?:^|[\\/])\.\.(?:[\\/]|$)/;
     module3.exports = send;
     module3.exports.mime = mime8;
-    function send(req, path25, options2) {
-      return new SendStream(req, path25, options2);
+    function send(req, path26, options2) {
+      return new SendStream(req, path26, options2);
     }
-    function SendStream(req, path25, options2) {
+    function SendStream(req, path26, options2) {
       Stream2.call(this);
       var opts = options2 || {};
       this.options = opts;
-      this.path = path25;
+      this.path = path26;
       this.req = req;
       this._acceptRanges = opts.acceptRanges !== void 0 ? Boolean(opts.acceptRanges) : true;
       this._cacheControl = opts.cacheControl !== void 0 ? Boolean(opts.cacheControl) : true;
@@ -21708,8 +21708,8 @@ var require_send = __commonJS2({
       this._index = index2;
       return this;
     }, "send.index: pass index as option");
-    SendStream.prototype.root = function root(path25) {
-      this._root = resolve(String(path25));
+    SendStream.prototype.root = function root(path26) {
+      this._root = resolve(String(path26));
       debug17("root %s", this._root);
       return this;
     };
@@ -21822,10 +21822,10 @@ var require_send = __commonJS2({
       var lastModified = this.res.getHeader("Last-Modified");
       return parseHttpDate(lastModified) <= parseHttpDate(ifRange);
     };
-    SendStream.prototype.redirect = function redirect(path25) {
+    SendStream.prototype.redirect = function redirect(path26) {
       var res = this.res;
       if (hasListeners(this, "directory")) {
-        this.emit("directory", res, path25);
+        this.emit("directory", res, path26);
         return;
       }
       if (this.hasTrailingSlash()) {
@@ -21845,42 +21845,42 @@ var require_send = __commonJS2({
     SendStream.prototype.pipe = function pipe(res) {
       var root = this._root;
       this.res = res;
-      var path25 = decode(this.path);
-      if (path25 === -1) {
+      var path26 = decode(this.path);
+      if (path26 === -1) {
         this.error(400);
         return res;
       }
-      if (~path25.indexOf("\0")) {
+      if (~path26.indexOf("\0")) {
         this.error(400);
         return res;
       }
       var parts;
       if (root !== null) {
-        if (path25) {
-          path25 = normalize("." + sep + path25);
+        if (path26) {
+          path26 = normalize("." + sep + path26);
         }
-        if (UP_PATH_REGEXP.test(path25)) {
-          debug17('malicious path "%s"', path25);
+        if (UP_PATH_REGEXP.test(path26)) {
+          debug17('malicious path "%s"', path26);
           this.error(403);
           return res;
         }
-        parts = path25.split(sep);
-        path25 = normalize(join(root, path25));
+        parts = path26.split(sep);
+        path26 = normalize(join(root, path26));
       } else {
-        if (UP_PATH_REGEXP.test(path25)) {
-          debug17('malicious path "%s"', path25);
+        if (UP_PATH_REGEXP.test(path26)) {
+          debug17('malicious path "%s"', path26);
           this.error(403);
           return res;
         }
-        parts = normalize(path25).split(sep);
-        path25 = resolve(path25);
+        parts = normalize(path26).split(sep);
+        path26 = resolve(path26);
       }
       if (containsDotFile(parts)) {
         var access = this._dotfiles;
         if (access === void 0) {
           access = parts[parts.length - 1][0] === "." ? this._hidden ? "allow" : "ignore" : "allow";
         }
-        debug17('%s dotfile "%s"', access, path25);
+        debug17('%s dotfile "%s"', access, path26);
         switch (access) {
           case "allow":
             break;
@@ -21894,13 +21894,13 @@ var require_send = __commonJS2({
         }
       }
       if (this._index.length && this.hasTrailingSlash()) {
-        this.sendIndex(path25);
+        this.sendIndex(path26);
         return res;
       }
-      this.sendFile(path25);
+      this.sendFile(path26);
       return res;
     };
-    SendStream.prototype.send = function send2(path25, stat) {
+    SendStream.prototype.send = function send2(path26, stat) {
       var len = stat.size;
       var options2 = this.options;
       var opts = {};
@@ -21912,9 +21912,9 @@ var require_send = __commonJS2({
         this.headersAlreadySent();
         return;
       }
-      debug17('pipe "%s"', path25);
-      this.setHeader(path25, stat);
-      this.type(path25);
+      debug17('pipe "%s"', path26);
+      this.setHeader(path26, stat);
+      this.type(path26);
       if (this.isConditionalGET()) {
         if (this.isPreconditionFailure()) {
           this.error(412);
@@ -21963,28 +21963,28 @@ var require_send = __commonJS2({
         res.end();
         return;
       }
-      this.stream(path25, opts);
+      this.stream(path26, opts);
     };
-    SendStream.prototype.sendFile = function sendFile(path25) {
+    SendStream.prototype.sendFile = function sendFile(path26) {
       var i = 0;
       var self2 = this;
-      debug17('stat "%s"', path25);
-      fs26.stat(path25, function onstat(err, stat) {
-        if (err && err.code === "ENOENT" && !extname(path25) && path25[path25.length - 1] !== sep) {
+      debug17('stat "%s"', path26);
+      fs27.stat(path26, function onstat(err, stat) {
+        if (err && err.code === "ENOENT" && !extname(path26) && path26[path26.length - 1] !== sep) {
           return next(err);
         }
         if (err) return self2.onStatError(err);
-        if (stat.isDirectory()) return self2.redirect(path25);
-        self2.emit("file", path25, stat);
-        self2.send(path25, stat);
+        if (stat.isDirectory()) return self2.redirect(path26);
+        self2.emit("file", path26, stat);
+        self2.send(path26, stat);
       });
       function next(err) {
         if (self2._extensions.length <= i) {
           return err ? self2.onStatError(err) : self2.error(404);
         }
-        var p = path25 + "." + self2._extensions[i++];
+        var p = path26 + "." + self2._extensions[i++];
         debug17('stat "%s"', p);
-        fs26.stat(p, function(err2, stat) {
+        fs27.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -21992,7 +21992,7 @@ var require_send = __commonJS2({
         });
       }
     };
-    SendStream.prototype.sendIndex = function sendIndex(path25) {
+    SendStream.prototype.sendIndex = function sendIndex(path26) {
       var i = -1;
       var self2 = this;
       function next(err) {
@@ -22000,9 +22000,9 @@ var require_send = __commonJS2({
           if (err) return self2.onStatError(err);
           return self2.error(404);
         }
-        var p = join(path25, self2._index[i]);
+        var p = join(path26, self2._index[i]);
         debug17('stat "%s"', p);
-        fs26.stat(p, function(err2, stat) {
+        fs27.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -22011,10 +22011,10 @@ var require_send = __commonJS2({
       }
       next();
     };
-    SendStream.prototype.stream = function stream(path25, options2) {
+    SendStream.prototype.stream = function stream(path26, options2) {
       var self2 = this;
       var res = this.res;
-      var stream2 = fs26.createReadStream(path25, options2);
+      var stream2 = fs27.createReadStream(path26, options2);
       this.emit("stream", stream2);
       stream2.pipe(res);
       function cleanup() {
@@ -22029,10 +22029,10 @@ var require_send = __commonJS2({
         self2.emit("end");
       });
     };
-    SendStream.prototype.type = function type3(path25) {
+    SendStream.prototype.type = function type3(path26) {
       var res = this.res;
       if (res.getHeader("Content-Type")) return;
-      var type4 = mime8.lookup(path25);
+      var type4 = mime8.lookup(path26);
       if (!type4) {
         debug17("no content-type");
         return;
@@ -22041,9 +22041,9 @@ var require_send = __commonJS2({
       debug17("content-type %s", type4);
       res.setHeader("Content-Type", type4 + (charset ? "; charset=" + charset : ""));
     };
-    SendStream.prototype.setHeader = function setHeader3(path25, stat) {
+    SendStream.prototype.setHeader = function setHeader3(path26, stat) {
       var res = this.res;
-      this.emit("headers", res, path25, stat);
+      this.emit("headers", res, path26, stat);
       if (this._acceptRanges && !res.getHeader("Accept-Ranges")) {
         debug17("accept ranges");
         res.setHeader("Accept-Ranges", "bytes");
@@ -22102,9 +22102,9 @@ var require_send = __commonJS2({
       }
       return err instanceof Error ? createError(status, err, { expose: false }) : createError(status, err);
     }
-    function decode(path25) {
+    function decode(path26) {
       try {
-        return decodeURIComponent(path25);
+        return decodeURIComponent(path26);
       } catch (err) {
         return -1;
       }
@@ -23013,10 +23013,10 @@ var require_utils2 = __commonJS2({
     var querystring = require("querystring");
     exports2.etag = createETagGenerator({ weak: false });
     exports2.wetag = createETagGenerator({ weak: true });
-    exports2.isAbsolute = function(path24) {
-      if ("/" === path24[0]) return true;
-      if (":" === path24[1] && ("\\" === path24[2] || "/" === path24[2])) return true;
-      if ("\\\\" === path24.substring(0, 2)) return true;
+    exports2.isAbsolute = function(path25) {
+      if ("/" === path25[0]) return true;
+      if (":" === path25[1] && ("\\" === path25[2] || "/" === path25[2])) return true;
+      if ("\\\\" === path25.substring(0, 2)) return true;
     };
     exports2.flatten = deprecate.function(
       flatten,
@@ -23228,7 +23228,7 @@ var require_application = __commonJS2({
     };
     app2.use = function use(fn) {
       var offset = 0;
-      var path24 = "/";
+      var path25 = "/";
       if (typeof fn !== "function") {
         var arg = fn;
         while (Array.isArray(arg) && arg.length !== 0) {
@@ -23236,7 +23236,7 @@ var require_application = __commonJS2({
         }
         if (typeof arg !== "function") {
           offset = 1;
-          path24 = fn;
+          path25 = fn;
         }
       }
       var fns = flatten(slice.call(arguments, offset));
@@ -23247,12 +23247,12 @@ var require_application = __commonJS2({
       var router = this._router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router.use(path24, fn2);
+          return router.use(path25, fn2);
         }
-        debug17(".use app under %s", path24);
-        fn2.mountpath = path24;
+        debug17(".use app under %s", path25);
+        fn2.mountpath = path25;
         fn2.parent = this;
-        router.use(path24, function mounted_app(req, res, next) {
+        router.use(path25, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             setPrototypeOf(req, orig.request);
@@ -23264,9 +23264,9 @@ var require_application = __commonJS2({
       }, this);
       return this;
     };
-    app2.route = function route2(path24) {
+    app2.route = function route2(path25) {
       this.lazyrouter();
-      return this._router.route(path24);
+      return this._router.route(path25);
     };
     app2.engine = function engine(ext, fn) {
       if (typeof fn !== "function") {
@@ -23317,7 +23317,7 @@ var require_application = __commonJS2({
       }
       return this;
     };
-    app2.path = function path24() {
+    app2.path = function path25() {
       return this.parent ? this.parent.path() + this.mountpath : "";
     };
     app2.enabled = function enabled(setting) {
@@ -23333,19 +23333,19 @@ var require_application = __commonJS2({
       return this.set(setting, false);
     };
     methods.forEach(function(method) {
-      app2[method] = function(path24) {
+      app2[method] = function(path25) {
         if (method === "get" && arguments.length === 1) {
-          return this.set(path24);
+          return this.set(path25);
         }
         this.lazyrouter();
-        var route2 = this._router.route(path24);
+        var route2 = this._router.route(path25);
         route2[method].apply(route2, slice.call(arguments, 1));
         return this;
       };
     });
-    app2.all = function all(path24) {
+    app2.all = function all(path25) {
       this.lazyrouter();
-      var route2 = this._router.route(path24);
+      var route2 = this._router.route(path25);
       var args = slice.call(arguments, 1);
       for (var i = 0; i < methods.length; i++) {
         route2[methods[i]].apply(route2, args);
@@ -24104,7 +24104,7 @@ var require_request = __commonJS2({
       var subdomains2 = !isIP(hostname) ? hostname.split(".").reverse() : [hostname];
       return subdomains2.slice(offset);
     });
-    defineGetter(req, "path", function path24() {
+    defineGetter(req, "path", function path25() {
       return parse(this).pathname;
     });
     defineGetter(req, "hostname", function hostname() {
@@ -24426,7 +24426,7 @@ var require_response = __commonJS2({
     var http2 = require("http");
     var isAbsolute = require_utils2().isAbsolute;
     var onFinished = require_on_finished();
-    var path24 = require("path");
+    var path25 = require("path");
     var statuses = require_statuses();
     var merge = require_utils_merge();
     var sign = require_cookie_signature().sign;
@@ -24435,9 +24435,9 @@ var require_response = __commonJS2({
     var setCharset = require_utils2().setCharset;
     var cookie = require_cookie();
     var send = require_send();
-    var extname = path24.extname;
+    var extname = path25.extname;
     var mime8 = send.mime;
-    var resolve = path24.resolve;
+    var resolve = path25.resolve;
     var vary = require_vary();
     var res = Object.create(http2.ServerResponse.prototype);
     module3.exports = res;
@@ -24614,26 +24614,26 @@ var require_response = __commonJS2({
       this.type("txt");
       return this.send(body);
     };
-    res.sendFile = function sendFile(path25, options2, callback) {
+    res.sendFile = function sendFile(path26, options2, callback) {
       var done = callback;
       var req = this.req;
       var res2 = this;
       var next = req.next;
       var opts = options2 || {};
-      if (!path25) {
+      if (!path26) {
         throw new TypeError("path argument is required to res.sendFile");
       }
-      if (typeof path25 !== "string") {
+      if (typeof path26 !== "string") {
         throw new TypeError("path must be a string to res.sendFile");
       }
       if (typeof options2 === "function") {
         done = options2;
         opts = {};
       }
-      if (!opts.root && !isAbsolute(path25)) {
+      if (!opts.root && !isAbsolute(path26)) {
         throw new TypeError("path must be absolute or specify root to res.sendFile");
       }
-      var pathname = encodeURI(path25);
+      var pathname = encodeURI(path26);
       var file = send(req, pathname, opts);
       sendfile(res2, file, opts, function(err) {
         if (done) return done(err);
@@ -24643,7 +24643,7 @@ var require_response = __commonJS2({
         }
       });
     };
-    res.sendfile = function(path25, options2, callback) {
+    res.sendfile = function(path26, options2, callback) {
       var done = callback;
       var req = this.req;
       var res2 = this;
@@ -24653,7 +24653,7 @@ var require_response = __commonJS2({
         done = options2;
         opts = {};
       }
-      var file = send(req, path25, opts);
+      var file = send(req, path26, opts);
       sendfile(res2, file, opts, function(err) {
         if (done) return done(err);
         if (err && err.code === "EISDIR") return next();
@@ -24666,7 +24666,7 @@ var require_response = __commonJS2({
       res.sendfile,
       "res.sendfile: Use res.sendFile instead"
     );
-    res.download = function download(path25, filename, options2, callback) {
+    res.download = function download(path26, filename, options2, callback) {
       var done = callback;
       var name = filename;
       var opts = options2 || null;
@@ -24683,7 +24683,7 @@ var require_response = __commonJS2({
         opts = filename;
       }
       var headers = {
-        "Content-Disposition": contentDisposition(name || path25)
+        "Content-Disposition": contentDisposition(name || path26)
       };
       if (opts && opts.headers) {
         var keys = Object.keys(opts.headers);
@@ -24696,7 +24696,7 @@ var require_response = __commonJS2({
       }
       opts = Object.create(opts);
       opts.headers = headers;
-      var fullPath = !opts.root ? resolve(path25) : path25;
+      var fullPath = !opts.root ? resolve(path26) : path26;
       return this.sendFile(fullPath, opts, done);
     };
     res.contentType = res.type = function contentType(type3) {
@@ -24997,11 +24997,11 @@ var require_serve_static = __commonJS2({
         }
         var forwardError = !fallthrough;
         var originalUrl = parseUrl.original(req);
-        var path24 = parseUrl(req).pathname;
-        if (path24 === "/" && originalUrl.pathname.substr(-1) !== "/") {
-          path24 = "";
+        var path25 = parseUrl(req).pathname;
+        if (path25 === "/" && originalUrl.pathname.substr(-1) !== "/") {
+          path25 = "";
         }
-        var stream = send(req, path24, opts);
+        var stream = send(req, path25, opts);
         stream.on("directory", onDirectory);
         if (setHeaders) {
           stream.on("headers", setHeaders);
@@ -29156,8 +29156,8 @@ var require_package = __commonJS2({
 // node_modules/dotenv/lib/main.js
 var require_main = __commonJS2({
   "node_modules/dotenv/lib/main.js"(exports2, module3) {
-    var fs26 = require("fs");
-    var path24 = require("path");
+    var fs27 = require("fs");
+    var path25 = require("path");
     var os = require("os");
     var crypto7 = require("crypto");
     var packageJson = require_package();
@@ -29265,7 +29265,7 @@ var require_main = __commonJS2({
       if (options2 && options2.path && options2.path.length > 0) {
         if (Array.isArray(options2.path)) {
           for (const filepath of options2.path) {
-            if (fs26.existsSync(filepath)) {
+            if (fs27.existsSync(filepath)) {
               possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
             }
           }
@@ -29273,15 +29273,15 @@ var require_main = __commonJS2({
           possibleVaultPath = options2.path.endsWith(".vault") ? options2.path : `${options2.path}.vault`;
         }
       } else {
-        possibleVaultPath = path24.resolve(process.cwd(), ".env.vault");
+        possibleVaultPath = path25.resolve(process.cwd(), ".env.vault");
       }
-      if (fs26.existsSync(possibleVaultPath)) {
+      if (fs27.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
       }
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path24.join(os.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path25.join(os.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options2) {
       const debug17 = Boolean(options2 && options2.debug);
@@ -29298,7 +29298,7 @@ var require_main = __commonJS2({
       return { parsed };
     }
     function configDotenv(options2) {
-      const dotenvPath = path24.resolve(process.cwd(), ".env");
+      const dotenvPath = path25.resolve(process.cwd(), ".env");
       let encoding = "utf8";
       const debug17 = Boolean(options2 && options2.debug);
       const quiet = options2 && "quiet" in options2 ? options2.quiet : true;
@@ -29322,13 +29322,13 @@ var require_main = __commonJS2({
       }
       let lastError;
       const parsedAll = {};
-      for (const path25 of optionPaths) {
+      for (const path26 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs26.readFileSync(path25, { encoding }));
+          const parsed = DotenvModule.parse(fs27.readFileSync(path26, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options2);
         } catch (e) {
           if (debug17) {
-            _debug(`Failed to load ${path25} ${e.message}`);
+            _debug(`Failed to load ${path26} ${e.message}`);
           }
           lastError = e;
         }
@@ -29343,7 +29343,7 @@ var require_main = __commonJS2({
         const shortPaths = [];
         for (const filePath of optionPaths) {
           try {
-            const relative = path24.relative(process.cwd(), filePath);
+            const relative = path25.relative(process.cwd(), filePath);
             shortPaths.push(relative);
           } catch (e) {
             if (debug17) {
@@ -29883,13 +29883,13 @@ function __disposeResources(env) {
   }
   return next();
 }
-function __rewriteRelativeImportExtension(path24, preserveJsx) {
-  if (typeof path24 === "string" && /^\.\.?\//.test(path24)) {
-    return path24.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function(m, tsx, d, ext, cm) {
+function __rewriteRelativeImportExtension(path25, preserveJsx) {
+  if (typeof path25 === "string" && /^\.\.?\//.test(path25)) {
+    return path25.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function(m, tsx, d, ext, cm) {
       return tsx ? preserveJsx ? ".jsx" : ".js" : d && (!ext || !cm) ? m : d + ext + "." + cm.toLowerCase() + "js";
     });
   }
-  return path24;
+  return path25;
 }
 var extendStatics, __assign, __createBinding, __setModuleDefault, ownKeys, _SuppressedError, tslib_es6_default;
 var init_tslib_es6 = __esm2({
@@ -38492,8 +38492,8 @@ var require_main3 = __commonJS2({
 });
 
 // node_modules/iceberg-js/dist/index.mjs
-function buildUrl(baseUrl, path24, query) {
-  const url = new URL(path24, baseUrl);
+function buildUrl(baseUrl, path25, query) {
+  const url = new URL(path25, baseUrl);
   if (query) {
     for (const [key, value2] of Object.entries(query)) {
       if (value2 !== void 0) {
@@ -38523,12 +38523,12 @@ function createFetchClient(options2) {
   return {
     async request({
       method,
-      path: path24,
+      path: path25,
       query,
       body,
       headers
     }) {
-      const url = buildUrl(options2.baseUrl, path24, query);
+      const url = buildUrl(options2.baseUrl, path25, query);
       const authHeaders = await buildAuthHeaders(options2.auth);
       const res = await fetchFn(url, {
         method,
@@ -39196,7 +39196,7 @@ var init_dist3 = __esm2({
       if (bucketName.includes("/") || bucketName.includes("\\")) return false;
       return /^[\w!.\*'() &$@=;:+,?-]+$/.test(bucketName);
     };
-    encodeStoragePath = (path24) => path24.split("/").map(encodeURIComponent).join("/");
+    encodeStoragePath = (path25) => path25.split("/").map(encodeURIComponent).join("/");
     _getErrorMessage = (err) => {
       if (typeof err === "object" && err !== null) {
         const e = err;
@@ -39428,7 +39428,7 @@ var init_dist3 = __esm2({
       * @param path The relative file path. Should be of the format `folder/subfolder/filename.png`. The bucket must already exist before attempting to upload.
       * @param fileBody The body of the file to be stored in the bucket.
       */
-      async uploadOrUpdate(method, path24, fileBody, fileOptions) {
+      async uploadOrUpdate(method, path25, fileBody, fileOptions) {
         var _this = this;
         return _this.handleOperation(async () => {
           let body;
@@ -39452,7 +39452,7 @@ var init_dist3 = __esm2({
             if ((typeof ReadableStream !== "undefined" && body instanceof ReadableStream || body && typeof body === "object" && "pipe" in body && typeof body.pipe === "function") && !options2.duplex) options2.duplex = "half";
           }
           if (fileOptions === null || fileOptions === void 0 ? void 0 : fileOptions.headers) for (const [key, value2] of Object.entries(fileOptions.headers)) headers = setHeader2(headers, key, value2);
-          const cleanPath = _this._removeEmptyFolders(path24);
+          const cleanPath = _this._removeEmptyFolders(path25);
           const _path = _this._getFinalPath(cleanPath);
           const data = await (method == "PUT" ? put : post)(_this.fetch, `${_this.url}/object/${_path}`, body, _objectSpread22({ headers }, (options2 === null || options2 === void 0 ? void 0 : options2.duplex) ? { duplex: options2.duplex } : {}));
           return {
@@ -39529,8 +39529,8 @@ var init_dist3 = __esm2({
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       * - For React Native, using either `Blob`, `File` or `FormData` does not work as intended. Upload file using `ArrayBuffer` from base64 file data instead, see example below.
       */
-      async upload(path24, fileBody, fileOptions) {
-        return this.uploadOrUpdate("POST", path24, fileBody, fileOptions);
+      async upload(path25, fileBody, fileOptions) {
+        return this.uploadOrUpdate("POST", path25, fileBody, fileOptions);
       }
       /**
       * Upload a file with a token generated from `createSignedUploadUrl`.
@@ -39570,9 +39570,9 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: none
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async uploadToSignedUrl(path24, token, fileBody, fileOptions) {
+      async uploadToSignedUrl(path25, token, fileBody, fileOptions) {
         var _this3 = this;
-        const cleanPath = _this3._removeEmptyFolders(path24);
+        const cleanPath = _this3._removeEmptyFolders(path25);
         const _path = _this3._getFinalPath(cleanPath);
         const url = new URL(_this3.url + `/object/upload/sign/${_path}`);
         url.searchParams.set("token", token);
@@ -39641,10 +39641,10 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: `insert`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async createSignedUploadUrl(path24, options2) {
+      async createSignedUploadUrl(path25, options2) {
         var _this4 = this;
         return _this4.handleOperation(async () => {
-          let _path = _this4._getFinalPath(path24);
+          let _path = _this4._getFinalPath(path25);
           const headers = _objectSpread22({}, _this4.headers);
           if (options2 === null || options2 === void 0 ? void 0 : options2.upsert) headers["x-upsert"] = "true";
           const data = await post(_this4.fetch, `${_this4.url}/object/upload/sign/${_path}`, {}, { headers });
@@ -39653,7 +39653,7 @@ var init_dist3 = __esm2({
           if (!token) throw new StorageError("No token returned by API");
           return {
             signedUrl: url.toString(),
-            path: path24,
+            path: path25,
             token
           };
         });
@@ -39713,8 +39713,8 @@ var init_dist3 = __esm2({
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       * - For React Native, using either `Blob`, `File` or `FormData` does not work as intended. Update file using `ArrayBuffer` from base64 file data instead, see example below.
       */
-      async update(path24, fileBody, fileOptions) {
-        return this.uploadOrUpdate("PUT", path24, fileBody, fileOptions);
+      async update(path25, fileBody, fileOptions) {
+        return this.uploadOrUpdate("PUT", path25, fileBody, fileOptions);
       }
       /**
       * Moves an existing file to a new path in the same bucket.
@@ -39865,10 +39865,10 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: `select`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async createSignedUrl(path24, expiresIn, options2) {
+      async createSignedUrl(path25, expiresIn, options2) {
         var _this8 = this;
         return _this8.handleOperation(async () => {
-          let _path = _this8._getFinalPath(path24);
+          let _path = _this8._getFinalPath(path25);
           const hasTransform = typeof (options2 === null || options2 === void 0 ? void 0 : options2.transform) === "object" && options2.transform !== null && Object.keys(options2.transform).length > 0;
           let data = await post(_this8.fetch, `${_this8.url}/object/sign/${_path}`, _objectSpread22({ expiresIn }, hasTransform ? { transform: options2.transform } : {}), { headers: _this8.headers });
           const query = new URLSearchParams();
@@ -40003,13 +40003,13 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: `select`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      download(path24, options2, parameters) {
+      download(path25, options2, parameters) {
         const renderPath = typeof (options2 === null || options2 === void 0 ? void 0 : options2.transform) === "object" && options2.transform !== null && Object.keys(options2.transform).length > 0 ? "render/image/authenticated" : "object";
         const query = new URLSearchParams();
         if (options2 === null || options2 === void 0 ? void 0 : options2.transform) this.applyTransformOptsToQuery(query, options2.transform);
         if ((options2 === null || options2 === void 0 ? void 0 : options2.cacheNonce) != null) query.set("cacheNonce", String(options2.cacheNonce));
         const queryString = query.toString();
-        const _path = this._getFinalPath(path24);
+        const _path = this._getFinalPath(path25);
         const downloadFn = () => get(this.fetch, `${this.url}/${renderPath}/${_path}${queryString ? `?${queryString}` : ""}`, {
           headers: this.headers,
           noResolveJson: true
@@ -40040,9 +40040,9 @@ var init_dist3 = __esm2({
       * }
       * ```
       */
-      async info(path24) {
+      async info(path25) {
         var _this10 = this;
-        const _path = _this10._getFinalPath(path24);
+        const _path = _this10._getFinalPath(path25);
         return _this10.handleOperation(async () => {
           return recursiveToCamel(await get(_this10.fetch, `${_this10.url}/object/info/${_path}`, { headers: _this10.headers }));
         });
@@ -40063,9 +40063,9 @@ var init_dist3 = __esm2({
       *   .exists('folder/avatar1.png')
       * ```
       */
-      async exists(path24) {
+      async exists(path25) {
         var _this11 = this;
-        const _path = _this11._getFinalPath(path24);
+        const _path = _this11._getFinalPath(path25);
         try {
           await head(_this11.fetch, `${_this11.url}/object/${_path}`, { headers: _this11.headers });
           return {
@@ -40144,8 +40144,8 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: none
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      getPublicUrl(path24, options2) {
-        const _path = this._getFinalPath(path24);
+      getPublicUrl(path25, options2) {
+        const _path = this._getFinalPath(path25);
         const query = new URLSearchParams();
         if (options2 === null || options2 === void 0 ? void 0 : options2.download) query.set("download", options2.download === true ? "" : options2.download);
         if (options2 === null || options2 === void 0 ? void 0 : options2.transform) this.applyTransformOptsToQuery(query, options2.transform);
@@ -40234,10 +40234,10 @@ var init_dist3 = __esm2({
       *   .purgeCache('folder/avatar1.png', { transformations: true })
       * ```
       */
-      async purgeCache(path24, options2, parameters) {
+      async purgeCache(path25, options2, parameters) {
         var _this13 = this;
         return _this13.handleOperation(async () => {
-          const _path = encodeStoragePath(_this13._getFinalPath(path24));
+          const _path = encodeStoragePath(_this13._getFinalPath(path25));
           const query = new URLSearchParams();
           if (options2 === null || options2 === void 0 ? void 0 : options2.transformations) query.set("transformations", "true");
           const queryString = query.toString();
@@ -40335,13 +40335,13 @@ var init_dist3 = __esm2({
       *   - `objects` table permissions: `select`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async list(path24, options2, parameters) {
+      async list(path25, options2, parameters) {
         var _this14 = this;
         return _this14.handleOperation(async () => {
           const sortBy = (options2 === null || options2 === void 0 ? void 0 : options2.sortBy) ? _objectSpread22(_objectSpread22({}, DEFAULT_SEARCH_OPTIONS.sortBy), options2.sortBy) : DEFAULT_SEARCH_OPTIONS.sortBy;
           const body = _objectSpread22(_objectSpread22(_objectSpread22({}, DEFAULT_SEARCH_OPTIONS), options2), {}, {
             sortBy,
-            prefix: path24 || ""
+            prefix: path25 || ""
           });
           return await post(_this14.fetch, `${_this14.url}/object/list/${_this14.bucketId}`, body, { headers: _this14.headers }, parameters);
         });
@@ -40407,11 +40407,11 @@ var init_dist3 = __esm2({
         if (typeof Buffer !== "undefined") return Buffer.from(data).toString("base64");
         return btoa(data);
       }
-      _getFinalPath(path24) {
-        return `${this.bucketId}/${path24.replace(/^\/+/, "")}`;
+      _getFinalPath(path25) {
+        return `${this.bucketId}/${path25.replace(/^\/+/, "")}`;
       }
-      _removeEmptyFolders(path24) {
-        return path24.replace(/^\/|\/$/g, "").replace(/\/+/g, "/");
+      _removeEmptyFolders(path25) {
+        return path25.replace(/^\/|\/$/g, "").replace(/\/+/g, "/");
       }
       /** Modifies the `query`, appending values the from `transform` */
       applyTransformOptsToQuery(query, transform2) {
@@ -42513,9 +42513,9 @@ var require_helpers = __commonJS2({
       const fragment = hashIndex === -1 ? "" : redirectTo.slice(hashIndex);
       const queryIndex = base.indexOf("?");
       if (queryIndex !== -1) {
-        const path24 = base.slice(0, queryIndex);
+        const path25 = base.slice(0, queryIndex);
         const remaining = base.slice(queryIndex + 1).split("&").filter((pair) => pair !== "" && pair !== constants_1.PKCE_FLOW_ID_PARAM && !pair.startsWith(`${constants_1.PKCE_FLOW_ID_PARAM}=`));
-        base = remaining.length > 0 ? `${path24}?${remaining.join("&")}` : path24;
+        base = remaining.length > 0 ? `${path25}?${remaining.join("&")}` : path25;
       }
       const separator = base.includes("?") ? "&" : "?";
       return `${base}${separator}${constants_1.PKCE_FLOW_ID_PARAM}=${encodeURIComponent(flowId)}${fragment}`;
@@ -55597,8 +55597,8 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
         let imagePayload = fourPanelImageBase64OrPath;
         if (!imagePayload.startsWith("data:") && !imagePayload.startsWith("http")) {
           try {
-            const fs26 = await import("fs");
-            const buffer = fs26.readFileSync(imagePayload);
+            const fs27 = await import("fs");
+            const buffer = fs27.readFileSync(imagePayload);
             imagePayload = `data:image/png;base64,${buffer.toString("base64")}`;
           } catch (e) {
           }
@@ -113548,11 +113548,11 @@ ${end.comment}` : end.comment;
       return (f) => f.length === len && f !== "." && f !== "..";
     };
     var defaultPlatform = typeof process === "object" && process ? typeof process.env === "object" && process.env && process.env.__MINIMATCH_TESTING_PLATFORM__ || process.platform : "posix";
-    var path24 = {
+    var path25 = {
       win32: { sep: "\\" },
       posix: { sep: "/" }
     };
-    var sep = defaultPlatform === "win32" ? path24.win32.sep : path24.posix.sep;
+    var sep = defaultPlatform === "win32" ? path25.win32.sep : path25.posix.sep;
     minimatch.sep = sep;
     var GLOBSTAR = /* @__PURE__ */ Symbol("globstar **");
     minimatch.GLOBSTAR = GLOBSTAR;
@@ -237509,8 +237509,8 @@ var import_websocket_server = __toESM2(require_websocket_server(), 1);
 
 // src/server/index.ts
 var import_cors = __toESM2(require_lib3(), 1);
-var import_path87 = __toESM2(require("path"), 1);
-var import_fs93 = __toESM2(require("fs"), 1);
+var import_path88 = __toESM2(require("path"), 1);
+var import_fs94 = __toESM2(require("fs"), 1);
 var import_dotenv = __toESM2(require_main(), 1);
 var import_url3 = require("url");
 var import_child_process8 = require("child_process");
@@ -240772,10 +240772,275 @@ var AmazonDeleteDesignService = class {
   }
 };
 
+// src/server/services/cleanupService.ts
+var import_fs93 = __toESM2(require("fs"), 1);
+var import_path87 = __toESM2(require("path"), 1);
+init_settingsService();
+init_browserSessionService();
+init_updateMetadataService();
+init_visionOptimizationService();
+init_atomicFileStorage();
+var REVIEWED_FILE_PATH = import_path87.default.resolve(process.cwd(), "data", "cleanup_reviewed.json");
+var CleanupService = class {
+  /**
+   * Load the set of already reviewed/kept design IDs
+   */
+  static getReviewedIds() {
+    const recovery = loadJsonWithBackupRecovery(REVIEWED_FILE_PATH, {
+      defaultValue: { version: 1, updatedAt: (/* @__PURE__ */ new Date()).toISOString(), reviewedIds: [] }
+    });
+    const ids = Array.isArray(recovery.data?.reviewedIds) ? recovery.data.reviewedIds : [];
+    return new Set(ids.map((id) => String(id).replace(/^#/, "").replace(/-U$/, "").trim()).filter(Boolean));
+  }
+  /**
+   * Get total count of reviewed designs
+   */
+  static getReviewedCount() {
+    return this.getReviewedIds().size;
+  }
+  /**
+   * Add IDs to the reviewed list
+   */
+  static addReviewedIds(newIds) {
+    if (!newIds || newIds.length === 0) return;
+    const currentSet = this.getReviewedIds();
+    for (const id of newIds) {
+      const clean = String(id).replace(/^#/, "").replace(/-U$/, "").trim();
+      if (clean) currentSet.add(clean);
+    }
+    const payload = {
+      version: 1,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      reviewedIds: Array.from(currentSet)
+    };
+    atomicWriteJson(REVIEWED_FILE_PATH, payload, { backup: true, space: 2 });
+    console.log(`[CleanupService] \u{1F4DD} ${newIds.length} Design(s) zur Behalten-Liste hinzugef\xFCgt. Gesamt: ${currentSet.size}`);
+  }
+  /**
+   * Reset / clear the reviewed list
+   */
+  static clearReviewedList() {
+    const count = this.getReviewedCount();
+    const payload = {
+      version: 1,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      reviewedIds: []
+    };
+    atomicWriteJson(REVIEWED_FILE_PATH, payload, { backup: true, space: 2 });
+    console.log(`[CleanupService] \u{1F9F9} Behalten-Liste zur\xFCckgesetzt (${count} Eintr\xE4ge entfernt).`);
+    return { success: true, clearedCount: count };
+  }
+  /**
+   * Ensure artwork PNG and thumbnail exist locally for a design ID
+   */
+  static async ensureArtworkAvailable(rawDesignId) {
+    const cleanId = String(rawDesignId).replace(/^#/, "").replace(/-U$/, "").trim();
+    if (!cleanId) return false;
+    const designsDir = import_path87.default.resolve(process.cwd(), "data", "designs");
+    if (!import_fs93.default.existsSync(designsDir)) {
+      import_fs93.default.mkdirSync(designsDir, { recursive: true });
+    }
+    const safeId = cleanId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const mbaPath = import_path87.default.join(designsDir, `${safeId}_mba.png`);
+    const rawPath = import_path87.default.join(designsDir, `${safeId}.png`);
+    const thumbPath = import_path87.default.join(designsDir, `${safeId}_thumb.png`);
+    const existingFile = import_fs93.default.existsSync(mbaPath) ? mbaPath : import_fs93.default.existsSync(rawPath) ? rawPath : null;
+    if (existingFile) {
+      if (!import_fs93.default.existsSync(thumbPath)) {
+        VisionOptimizationService.prepareThumbnailImage(existingFile, thumbPath, 320).catch(() => {
+        });
+      }
+      return true;
+    }
+    console.log(`[CleanupService] \u{1F5BC}\uFE0F Lade Master-Artwork f\xFCr Design ${cleanId} \xFCber Session 1...`);
+    let newTab = null;
+    try {
+      const session2 = await BrowserSessionService.getSession("sync");
+      newTab = await session2.page.context().newPage();
+      const editUrl = `https://merch.amazon.com/designs/${cleanId}/edit`;
+      await newTab.goto(editUrl, { waitUntil: "domcontentloaded", timeout: 35e3 });
+      await newTab.waitForSelector(
+        'img[alt$=".png"], img[alt="null"], img.artwork, #global-uploader-container img, .global-uploader img',
+        { timeout: 2e4 }
+      ).catch(() => null);
+      const extractResult = await newTab.evaluate(() => {
+        const images = Array.from(document.querySelectorAll('img[alt$=".png"], img[alt="null"]'));
+        let targetImg = images.find((e) => e.getAttribute("alt") && e.getAttribute("alt").endsWith(".png"));
+        if (!targetImg) {
+          targetImg = images.find((e) => e.getAttribute("alt") === "null");
+        }
+        if (!targetImg) {
+          targetImg = document.querySelector("img.artwork.ng-star-inserted") || document.querySelector(".artwork") || document.querySelector("#global-uploader-container img") || document.querySelector(".global-uploader img");
+        }
+        if (!targetImg || !targetImg.src) {
+          return { ok: false, error: "Kein Artwork Bild-Element auf Amazon Edit-Seite gefunden." };
+        }
+        const rawSrc = targetImg.src;
+        const fullResUrl = rawSrc.replace(/\._[^_]+_\.(png|jpg|jpeg)$/i, ".$1");
+        return { ok: true, fullResUrl };
+      });
+      if (!extractResult.ok || !extractResult.fullResUrl) {
+        console.warn(`[CleanupService] \u26A0\uFE0F Artwork-URL f\xFCr ${cleanId} nicht gefunden.`);
+        return false;
+      }
+      const base64Data = await newTab.evaluate(async (imgUrl) => {
+        const resp = await fetch(imgUrl, { credentials: "include" });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status} beim Laden des Artworks`);
+        const blob = await resp.blob();
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error("FileReader Fehler"));
+          reader.readAsDataURL(blob);
+        });
+      }, extractResult.fullResUrl);
+      const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(base64Clean, "base64");
+      import_fs93.default.writeFileSync(rawPath, buffer);
+      VisionOptimizationService.prepareThumbnailImage(rawPath, thumbPath, 320).catch(() => {
+      });
+      console.log(`[CleanupService] \u2705 Master-Artwork f\xFCr ${cleanId} gespeichert (${(buffer.length / 1024 / 1024).toFixed(2)} MB).`);
+      return true;
+    } catch (err) {
+      console.error(`[CleanupService] \u274C Fehler beim Artwork-Download f\xFCr ${cleanId}:`, err.message);
+      return false;
+    } finally {
+      if (newTab) {
+        await newTab.close().catch(() => {
+        });
+      }
+    }
+  }
+  /**
+   * Scan random published designs from Supabase (Egress-optimized)
+   */
+  static async scanRandomDesigns(limit = 10) {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return {
+        success: false,
+        items: [],
+        totalReviewed: 0,
+        allReviewed: false,
+        error: "Keine Supabase-Verbindung konfiguriert."
+      };
+    }
+    const reviewedIds = this.getReviewedIds();
+    console.log(`[CleanupService] \u{1F50D} Frage Supabase nach PUBLISHED-Designs ab (bereits ignoriert: ${reviewedIds.size})...`);
+    const { data, error } = await supabase.from("mba_designs").select("design_id, title_us").eq("status", "PUBLISHED").limit(1e3);
+    if (error) {
+      console.error("[CleanupService] \u274C Supabase-Fehler:", error.message);
+      return {
+        success: false,
+        items: [],
+        totalReviewed: reviewedIds.size,
+        allReviewed: false,
+        error: error.message
+      };
+    }
+    if (!data || data.length === 0) {
+      return {
+        success: true,
+        items: [],
+        totalReviewed: reviewedIds.size,
+        allReviewed: true
+      };
+    }
+    const candidates = data.filter((row) => {
+      const clean = String(row.design_id || "").replace(/^#/, "").replace(/-U$/, "").trim();
+      return clean && !reviewedIds.has(clean);
+    });
+    if (candidates.length === 0) {
+      console.log(`[CleanupService] \u2139\uFE0F Alle gefundenen ${data.length} Designs wurden bereits gepr\xFCft.`);
+      return {
+        success: true,
+        items: [],
+        totalReviewed: reviewedIds.size,
+        allReviewed: true
+      };
+    }
+    const shuffled = [...candidates].sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, Math.min(limit, shuffled.length));
+    console.log(`[CleanupService] \u{1F3AF} ${selected.length} Designs ausgew\xE4hlt. Lade Grafiken...`);
+    const items = [];
+    for (const cand of selected) {
+      const cleanId = String(cand.design_id).replace(/^#/, "").replace(/-U$/, "").trim();
+      await this.ensureArtworkAvailable(cleanId);
+      items.push({
+        designId: cleanId,
+        title: cand.title_us?.trim() || "Kein Titel hinterlegt",
+        imageUrl: `/api/v1/designs/image/${encodeURIComponent(cleanId)}`,
+        thumbnailUrl: `/api/v1/designs/thumbnail/${encodeURIComponent(cleanId)}`
+      });
+    }
+    return {
+      success: true,
+      items,
+      totalReviewed: reviewedIds.size,
+      allReviewed: false
+    };
+  }
+  /**
+   * Process a batch of decisions (delete on Amazon / keep in ignore-list)
+   */
+  static async processBatch(actions) {
+    if (!actions || actions.length === 0) {
+      return {
+        success: true,
+        totalProcessed: 0,
+        deletedCount: 0,
+        keptCount: 0,
+        errors: []
+      };
+    }
+    const errors2 = [];
+    const idsToMarkReviewed = [];
+    let deletedCount = 0;
+    let keptCount = 0;
+    for (const item of actions) {
+      const cleanId = String(item.designId || "").replace(/^#/, "").replace(/-U$/, "").trim();
+      if (!cleanId) continue;
+      if (item.action === "delete") {
+        console.log(`[CleanupService] \u{1F5D1}\uFE0F Verarbeite L\xF6schung f\xFCr Design ${cleanId}...`);
+        try {
+          const deleteResult = await AmazonDeleteDesignService.deleteDesignFromAmazon(cleanId);
+          if (!deleteResult.success) {
+            console.error(`[CleanupService] \u274C Amazon-L\xF6schung fehlgeschlagen f\xFCr ${cleanId}:`, deleteResult.error);
+            errors2.push({ designId: cleanId, error: deleteResult.error || "Amazon L\xF6schung fehlgeschlagen." });
+            continue;
+          }
+          const markResult = await UpdateMetadataService.markSkipUpdate(cleanId);
+          if (!markResult.success) {
+            console.warn(`[CleanupService] \u26A0\uFE0F Supabase skip_update konnte nicht gesetzt werden f\xFCr ${cleanId}:`, markResult.error);
+          }
+          deletedCount++;
+          idsToMarkReviewed.push(cleanId);
+        } catch (err) {
+          console.error(`[CleanupService] \u274C Unerwarteter Fehler beim L\xF6schen von ${cleanId}:`, err.message);
+          errors2.push({ designId: cleanId, error: err.message || "Unerwarteter Fehler" });
+        }
+      } else if (item.action === "keep") {
+        keptCount++;
+        idsToMarkReviewed.push(cleanId);
+      }
+    }
+    if (idsToMarkReviewed.length > 0) {
+      this.addReviewedIds(idsToMarkReviewed);
+    }
+    return {
+      success: errors2.length === 0,
+      totalProcessed: deletedCount + keptCount,
+      deletedCount,
+      keptCount,
+      errors: errors2
+    };
+  }
+};
+
 // src/server/index.ts
 var import_meta = {};
 import_dotenv.default.config();
-var currentDir2 = typeof __dirname !== "undefined" ? __dirname : import_path87.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
+var currentDir2 = typeof __dirname !== "undefined" ? __dirname : import_path88.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
 var app = (0, import_express.default)();
 var server2 = import_http4.default.createServer(app);
 var isSystemReady = false;
@@ -241204,26 +241469,26 @@ app.post("/api/v1/system/update", async (req, res) => {
     }
     const arrayBuffer = await response2.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const tempTarPath = import_path87.default.resolve(process.cwd(), ".temp_update.tar.gz");
-    import_fs93.default.writeFileSync(tempTarPath, buffer);
+    const tempTarPath = import_path88.default.resolve(process.cwd(), ".temp_update.tar.gz");
+    import_fs94.default.writeFileSync(tempTarPath, buffer);
     (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
       cwd: process.cwd(),
       timeout: 45e3
     });
     try {
-      import_fs93.default.unlinkSync(tempTarPath);
+      import_fs94.default.unlinkSync(tempTarPath);
     } catch (e) {
     }
-    const hostRepoPath = import_path87.default.resolve(process.cwd(), "host_repo");
-    if (import_fs93.default.existsSync(hostRepoPath)) {
+    const hostRepoPath = import_path88.default.resolve(process.cwd(), "host_repo");
+    if (import_fs94.default.existsSync(hostRepoPath)) {
       try {
-        import_fs93.default.writeFileSync(tempTarPath, buffer);
+        import_fs94.default.writeFileSync(tempTarPath, buffer);
         (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
           cwd: hostRepoPath,
           timeout: 45e3
         });
         try {
-          import_fs93.default.unlinkSync(tempTarPath);
+          import_fs94.default.unlinkSync(tempTarPath);
         } catch (e) {
         }
       } catch (e) {
@@ -241503,11 +241768,11 @@ app.post("/api/v1/design-pipeline/run", async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
-var heartbeatFile = import_path87.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");
+var heartbeatFile = import_path88.default.resolve(process.cwd(), "data", "hermes_heartbeat.json");
 function loadHeartbeatState() {
   try {
-    if (import_fs93.default.existsSync(heartbeatFile)) {
-      const data = JSON.parse(import_fs93.default.readFileSync(heartbeatFile, "utf-8"));
+    if (import_fs94.default.existsSync(heartbeatFile)) {
+      const data = JSON.parse(import_fs94.default.readFileSync(heartbeatFile, "utf-8"));
       return {
         lastPingTime: Number(data.lastPingTime) || 0,
         lastPingIp: data.lastPingIp || "",
@@ -241530,9 +241795,9 @@ function recordHermesHeartbeat(req, metadata) {
   }
   console.log(`[MCP Heartbeat] \u{1F7E2} Heartbeat #${hermesHeartbeat.totalPings} von IP ${clientIp} registriert (Server-Zeit: ${(/* @__PURE__ */ new Date()).toLocaleTimeString()})`);
   try {
-    const dataDir = import_path87.default.resolve(process.cwd(), "data");
-    if (!import_fs93.default.existsSync(dataDir)) import_fs93.default.mkdirSync(dataDir, { recursive: true });
-    import_fs93.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
+    const dataDir = import_path88.default.resolve(process.cwd(), "data");
+    if (!import_fs94.default.existsSync(dataDir)) import_fs94.default.mkdirSync(dataDir, { recursive: true });
+    import_fs94.default.writeFileSync(heartbeatFile, JSON.stringify(hermesHeartbeat, null, 2), "utf-8");
   } catch (e) {
   }
   const currentHermes = {
@@ -241882,6 +242147,45 @@ app.post("/api/v1/tasks/:taskId/amazon-delete", async (req, res) => {
     res.status(500).json({ success: false, error: err.message || "Interner Serverfehler beim L\xF6schen auf Amazon." });
   }
 });
+app.get("/api/v1/cleanup/stats", (_req, res) => {
+  try {
+    const totalReviewed = CleanupService.getReviewedCount();
+    res.json({ success: true, totalReviewed });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.post("/api/v1/cleanup/scan", async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(20, Number(req.body?.limit) || 10));
+    const result2 = await CleanupService.scanRandomDesigns(limit);
+    res.json(result2);
+  } catch (err) {
+    console.error("[CleanUp] Fehler beim Scannen:", err);
+    res.status(500).json({ success: false, error: err.message || "Fehler beim Scannen von Designs." });
+  }
+});
+app.post("/api/v1/cleanup/process", async (req, res) => {
+  try {
+    const actions = req.body?.actions;
+    if (!Array.isArray(actions)) {
+      return res.status(400).json({ success: false, error: "Ung\xFCltiges Aktions-Array \xFCbergeben." });
+    }
+    const result2 = await CleanupService.processBatch(actions);
+    res.json(result2);
+  } catch (err) {
+    console.error("[CleanUp] Fehler beim Verarbeiten:", err);
+    res.status(500).json({ success: false, error: err.message || "Fehler beim Verarbeiten." });
+  }
+});
+app.post("/api/v1/cleanup/reset-reviewed", (_req, res) => {
+  try {
+    const result2 = CleanupService.clearReviewedList();
+    res.json(result2);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 app.post("/api/v1/tasks/:taskId/:reviewAction", (req, res, next) => {
   if (!["submit-design-review", "submit-tm-review", "override-preflight", "submit-svg-review", "reset-svg"].includes(req.params.reviewAction)) return next();
   try {
@@ -242181,7 +242485,7 @@ app.post("/api/v1/systemprompts/reset", (req, res) => {
 });
 function sendCachedImage(req, res, filePath, isThumbnail = false, contentType = "image/png") {
   try {
-    const stats2 = import_fs93.default.statSync(filePath);
+    const stats2 = import_fs94.default.statSync(filePath);
     const etag = `"${stats2.size}-${Math.floor(stats2.mtimeMs)}"`;
     const clientEtag = req.headers["if-none-match"];
     if (clientEtag && clientEtag === etag) {
@@ -242195,23 +242499,23 @@ function sendCachedImage(req, res, filePath, isThumbnail = false, contentType = 
     } else {
       res.setHeader("Cache-Control", "private, max-age=3600, must-revalidate");
     }
-    return import_fs93.default.createReadStream(filePath).pipe(res);
+    return import_fs94.default.createReadStream(filePath).pipe(res);
   } catch (err) {
     res.status(404).send("File not found");
   }
 }
 app.get("/api/v1/designs/image/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const mbaFilePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-  if (import_fs93.default.existsSync(mbaFilePath)) {
+  const mbaFilePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  if (import_fs94.default.existsSync(mbaFilePath)) {
     return sendCachedImage(req, res, mbaFilePath, false, "image/png");
   }
-  if (import_fs93.default.existsSync(rawFilePath)) {
+  if (import_fs94.default.existsSync(rawFilePath)) {
     return sendCachedImage(req, res, rawFilePath, false, "image/png");
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
-  if (task?.localImagePath && import_fs93.default.existsSync(task.localImagePath)) {
+  if (task?.localImagePath && import_fs94.default.existsSync(task.localImagePath)) {
     return sendCachedImage(req, res, task.localImagePath, false, "image/png");
   }
   if (task && task.imageUrl) {
@@ -242219,36 +242523,36 @@ app.get("/api/v1/designs/image/:taskId", (req, res) => {
   }
   const queueItems = QueueService.loadQueue();
   const qItem = queueItems.find((q) => q.id === req.params.taskId || q.taskId === req.params.taskId || q.designId === req.params.taskId);
-  if (qItem?.pngPath && import_fs93.default.existsSync(qItem.pngPath)) {
+  if (qItem?.pngPath && import_fs94.default.existsSync(qItem.pngPath)) {
     return sendCachedImage(req, res, qItem.pngPath, false, "image/png");
   }
-  if (qItem?.imagePath && import_fs93.default.existsSync(qItem.imagePath)) {
+  if (qItem?.imagePath && import_fs94.default.existsSync(qItem.imagePath)) {
     return sendCachedImage(req, res, qItem.imagePath, false, "image/png");
   }
   res.status(404).send("Design image not found");
 });
 app.get("/api/v1/designs/thumbnail/:taskId", async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const thumbFilePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}_thumb.png`);
-  if (import_fs93.default.existsSync(thumbFilePath)) {
+  const thumbFilePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}_thumb.png`);
+  if (import_fs94.default.existsSync(thumbFilePath)) {
     try {
-      const stats2 = import_fs93.default.statSync(thumbFilePath);
+      const stats2 = import_fs94.default.statSync(thumbFilePath);
       if (stats2.size > 500) {
         return sendCachedImage(req, res, thumbFilePath, true, "image/png");
       }
     } catch (e) {
     }
   }
-  const mbaFilePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
-  const svgFilePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+  const mbaFilePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const svgFilePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
   const task = TaskLogService.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs93.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localSvgPath && import_fs93.default.existsSync(task.localSvgPath) ? task.localSvgPath : task?.localImagePath && import_fs93.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs93.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs93.default.existsSync(svgFilePath) ? svgFilePath : import_fs93.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs94.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localSvgPath && import_fs94.default.existsSync(task.localSvgPath) ? task.localSvgPath : task?.localImagePath && import_fs94.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs94.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs94.default.existsSync(svgFilePath) ? svgFilePath : import_fs94.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge Thumbnail f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareThumbnailImage(targetPath, thumbFilePath, 320);
-      if (savedPath && import_fs93.default.existsSync(savedPath)) {
+      if (savedPath && import_fs94.default.existsSync(savedPath)) {
         return sendCachedImage(req, res, savedPath, true, "image/png");
       }
     } catch (e) {
@@ -242259,25 +242563,25 @@ app.get("/api/v1/designs/thumbnail/:taskId", async (req, res) => {
 });
 app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const gridFilePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
-  if (import_fs93.default.existsSync(gridFilePath)) {
+  const gridFilePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}_grid2x2.jpg`);
+  if (import_fs94.default.existsSync(gridFilePath)) {
     try {
-      const stats2 = import_fs93.default.statSync(gridFilePath);
+      const stats2 = import_fs94.default.statSync(gridFilePath);
       if (stats2.size > 1e3) {
         return sendCachedImage(req, res, gridFilePath, true, "image/jpeg");
       }
     } catch (e) {
     }
   }
-  const mbaFilePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const mbaFilePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs93.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs93.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs93.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs93.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs94.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs94.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs94.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs94.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge 2x2 Grid f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareVisionImage(targetPath, gridFilePath);
-      if (savedPath && import_fs93.default.existsSync(savedPath)) {
+      if (savedPath && import_fs94.default.existsSync(savedPath)) {
         return sendCachedImage(req, res, savedPath, true, "image/jpeg");
       }
     } catch (e) {
@@ -242288,25 +242592,25 @@ app.get("/api/v1/designs/grid2x2/:taskId", async (req, res) => {
 });
 app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const previewFilePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
-  if (import_fs93.default.existsSync(previewFilePath)) {
+  const previewFilePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}.u4-preview.png`);
+  if (import_fs94.default.existsSync(previewFilePath)) {
     try {
-      const stats2 = import_fs93.default.statSync(previewFilePath);
+      const stats2 = import_fs94.default.statSync(previewFilePath);
       if (stats2.size > 1e3) {
         return sendCachedImage(req, res, previewFilePath, true, "image/png");
       }
     } catch (e) {
     }
   }
-  const mbaFilePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  const rawFilePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
+  const mbaFilePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  const rawFilePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}.png`);
   const task = TaskLogService.getTaskLogById(req.params.taskId);
-  const targetPath = task?.localMbaPngPath && import_fs93.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs93.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs93.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs93.default.existsSync(rawFilePath) ? rawFilePath : null;
+  const targetPath = task?.localMbaPngPath && import_fs94.default.existsSync(task.localMbaPngPath) ? task.localMbaPngPath : task?.localImagePath && import_fs94.default.existsSync(task.localImagePath) ? task.localImagePath : import_fs94.default.existsSync(mbaFilePath) ? mbaFilePath : import_fs94.default.existsSync(rawFilePath) ? rawFilePath : null;
   if (targetPath) {
     try {
       console.log(`[API] Erzeuge U4 Preview f\xFCr Task ${cleanId} on-demand aus ${targetPath}...`);
       const { savedPath } = await VisionOptimizationService.prepareU4PreviewImage(targetPath, previewFilePath);
-      if (savedPath && import_fs93.default.existsSync(savedPath)) {
+      if (savedPath && import_fs94.default.existsSync(savedPath)) {
         return sendCachedImage(req, res, savedPath, true, "image/png");
       }
     } catch (e) {
@@ -242317,8 +242621,8 @@ app.get("/api/v1/designs/u4-preview/:taskId", async (req, res) => {
 });
 app.get("/api/v1/designs/svg/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
-  if (import_fs93.default.existsSync(filePath)) {
+  const filePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+  if (import_fs94.default.existsSync(filePath)) {
     return sendCachedImage(req, res, filePath, false, "image/svg+xml");
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
@@ -242331,12 +242635,12 @@ app.get("/api/v1/designs/svg/:taskId", (req, res) => {
 });
 app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}_original.svg`);
-  if (import_fs93.default.existsSync(filePath)) {
+  const filePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}_original.svg`);
+  if (import_fs94.default.existsSync(filePath)) {
     return sendCachedImage(req, res, filePath, false, "image/svg+xml");
   }
-  const fallbackPath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
-  if (import_fs93.default.existsSync(fallbackPath)) {
+  const fallbackPath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
+  if (import_fs94.default.existsSync(fallbackPath)) {
     return sendCachedImage(req, res, fallbackPath, false, "image/svg+xml");
   }
   const task = TaskLogService.getTaskLogById(req.params.taskId);
@@ -242349,16 +242653,16 @@ app.get("/api/v1/designs/svg-original/:taskId", (req, res) => {
 });
 app.get("/api/v1/designs/mba-png/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
-  if (import_fs93.default.existsSync(filePath)) {
+  const filePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}_mba.png`);
+  if (import_fs94.default.existsSync(filePath)) {
     return sendCachedImage(req, res, filePath, false, "image/png");
   }
   res.status(404).send("MBA PNG not found");
 });
 app.get("/api/v1/designs/4panel/:taskId", (req, res) => {
   const cleanId = req.params.taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filePath = import_path87.default.resolve(process.cwd(), "data", "designs", `${cleanId}_4panel.png`);
-  if (import_fs93.default.existsSync(filePath)) {
+  const filePath = import_path88.default.resolve(process.cwd(), "data", "designs", `${cleanId}_4panel.png`);
+  if (import_fs94.default.existsSync(filePath)) {
     return sendCachedImage(req, res, filePath, false, "image/png");
   }
   res.status(404).send("4-Panel image not found");
@@ -242876,14 +243180,14 @@ app.delete("/api/v1/products/catalog", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-var clientDistPath = import_path87.default.resolve(currentDir2, "client");
-var fallbackDistPath = import_path87.default.resolve(process.cwd(), "dist/client");
-var staticPath = import_fs93.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
-if (import_fs93.default.existsSync(staticPath)) {
+var clientDistPath = import_path88.default.resolve(currentDir2, "client");
+var fallbackDistPath = import_path88.default.resolve(process.cwd(), "dist/client");
+var staticPath = import_fs94.default.existsSync(clientDistPath) ? clientDistPath : fallbackDistPath;
+if (import_fs94.default.existsSync(staticPath)) {
   console.log(`\u{1F4C2} Serving static frontend from ${staticPath}`);
   app.use(import_express.default.static(staticPath));
   app.get("*", (req, res) => {
-    res.sendFile(import_path87.default.join(staticPath, "index.html"));
+    res.sendFile(import_path88.default.join(staticPath, "index.html"));
   });
 }
 TaskRepository.init();

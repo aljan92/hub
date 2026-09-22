@@ -12,10 +12,11 @@ import {
   Shirt,
   ShieldCheck,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Eraser
 } from 'lucide-react';
 
-export type ActiveTab = 'dashboard' | 'designer' | 'tasks' | 'queue' | 'promptlog' | 'products' | 'database' | 'systemprompts' | 'trademark' | 'settings' | 'logs';
+export type ActiveTab = 'dashboard' | 'designer' | 'tasks' | 'queue' | 'promptlog' | 'products' | 'database' | 'clean' | 'systemprompts' | 'trademark' | 'settings' | 'logs';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -96,6 +97,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Database',
       icon: Database,
       description: 'MBA ⇄ Supabase Sync',
+    },
+    {
+      id: 'clean' as ActiveTab,
+      label: 'Clean',
+      icon: Eraser,
+      description: 'Design-Bereinigung & Scan',
     },
     {
       id: 'systemprompts' as ActiveTab,
