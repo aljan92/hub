@@ -938,7 +938,7 @@ export const TasksView: React.FC = () => {
       });
       const data = await res.json();
       if (data.success) {
-        setFieldFairUse(prev => ({ ...prev, [field]: data }));
+        setFieldFairUse(prev => ({ ...prev, [field]: { ...data, evaluatedText: text } }));
         if (data.overallVerdict === 'SAFE_FAIR_USE') {
           showNotification('success', `Fair Use (${field}): ${data.summary}`);
         } else {
@@ -1112,11 +1112,21 @@ export const TasksView: React.FC = () => {
     const fieldsToEvaluate = fields.filter(f => {
       const text = editableListing[f]?.trim();
       const data = getFieldTmInfo(f);
-      return Boolean(text && data?.totalHits && data.totalHits > 0);
+      if (!text || !data?.totalHits || data.totalHits === 0) return false;
+
+      // Wenn das Feld bereits als SAFE_FAIR_USE freigegeben ist und der Text unverändert ist -> überspringen!
+      const existingFairUse = fieldFairUse[f];
+      if (
+        existingFairUse?.overallVerdict === 'SAFE_FAIR_USE' &&
+        existingFairUse.evaluatedText === editableListing[f]
+      ) {
+        return false;
+      }
+      return true;
     });
 
     if (fieldsToEvaluate.length === 0) {
-      showNotification('info', 'Keine Felder mit Markentreffern vorhanden (alle Felder sauber).');
+      showNotification('info', 'Keine erneute Fair-Use-Prüfung nötig – alle Felder sind sauber oder bereits unverändert als Fair Use freigegeben.');
       return;
     }
 
@@ -1135,7 +1145,7 @@ export const TasksView: React.FC = () => {
           });
           const evalData = await res.json();
           if (evalData.success) {
-            setFieldFairUse(prev => ({ ...prev, [f]: evalData }));
+            setFieldFairUse(prev => ({ ...prev, [f]: { ...evalData, evaluatedText: text } }));
             count++;
           }
         })
@@ -1162,7 +1172,12 @@ export const TasksView: React.FC = () => {
       const data = getFieldTmInfo(f);
       if (!data?.totalHits || data.totalHits === 0) return false;
       const fairUse = fieldFairUse[f];
-      if (fairUse?.overallVerdict === 'SAFE_FAIR_USE') return false;
+      if (
+        fairUse?.overallVerdict === 'SAFE_FAIR_USE' &&
+        (!fairUse.evaluatedText || fairUse.evaluatedText === editableListing[f])
+      ) {
+        return false;
+      }
       return true;
     });
 
