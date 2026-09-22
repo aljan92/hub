@@ -132,7 +132,7 @@ export class DesignPipelineService {
     }
 
     try {
-      await TaskLogService.generatePromptWithOpenRouter(taskId);
+      await TaskLogService.generatePromptWithOpenRouter(taskId, { skipPreFlight: true });
       const updated = this.getTask(taskId);
       return { success: true, prompt: updated?.resultPrompt };
     } catch (err: any) {

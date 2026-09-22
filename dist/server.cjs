@@ -229685,7 +229685,7 @@ var init_designPipelineService = __esm2({
           return { success: false, error: `Design-Pipeline pausiert: OpenRouter Guthaben ($${balance.toFixed(2)}) unter Schwellenwert ($${threshold.toFixed(2)})` };
         }
         try {
-          await TaskLogService.generatePromptWithOpenRouter(taskId);
+          await TaskLogService.generatePromptWithOpenRouter(taskId, { skipPreFlight: true });
           const updated = this.getTask(taskId);
           return { success: true, prompt: updated?.resultPrompt };
         } catch (err) {
@@ -233313,6 +233313,12 @@ var init_taskLogService = __esm2({
           });
         });
       }
+      /**
+       * Alias for processTaskWithOpenRouter
+       */
+      static async generatePromptWithOpenRouter(taskId, options2) {
+        return this.processTaskWithOpenRouter(taskId, options2);
+      }
       static async processTaskWithOpenRouterExclusive(taskId, options2) {
         const task = this.getTaskLogById(taskId);
         if (!task) return;
@@ -233478,6 +233484,7 @@ var init_taskLogService = __esm2({
           return;
         }
         const imageGeneration = task.imageGeneration;
+        const isGptImage = imageGeneration?.provider === "GPT_IMAGE_2";
         const isGptImage25 = isGptImage && imageGeneration?.model === "openai/gpt-image-2.5-sunburst";
         const bgMode = imageGeneration?.background || (isGptImage25 ? "transparent" : "deep_blue");
         const chromaKeyDirective = (modelName) => `
@@ -233664,15 +233671,15 @@ ${referenceSection}` : ""}`;
           magicPrompt: settings.ideogramMagicPromptOption || "AUTO"
         };
         const prompt = promptText || task.resultPrompt || task.payload?.prompt || task.payload?.quote || "";
-        const isGptImage2 = snapshot3.provider === "GPT_IMAGE_2";
+        const isGptImage = snapshot3.provider === "GPT_IMAGE_2";
         const isIdeogramV4 = snapshot3.provider === "IDEOGRAM_V4";
-        const isGptImage25 = isGptImage2 && snapshot3.model === "openai/gpt-image-2.5-sunburst";
-        const providerLabel = isGptImage25 ? "GPT Image 2.5 Sunburst" : isGptImage2 ? "GPT Image 2" : isIdeogramV4 ? "Ideogram 4.0" : "Ideogram";
-        const model = snapshot3.model || (isIdeogramV4 ? IdeogramV4Service.MODEL : isGptImage2 ? settings.gptImageModel || OpenRouterImageService.MODEL_V25 : "V_3");
+        const isGptImage25 = isGptImage && snapshot3.model === "openai/gpt-image-2.5-sunburst";
+        const providerLabel = isGptImage25 ? "GPT Image 2.5 Sunburst" : isGptImage ? "GPT Image 2" : isIdeogramV4 ? "Ideogram 4.0" : "Ideogram";
+        const model = snapshot3.model || (isIdeogramV4 ? IdeogramV4Service.MODEL : isGptImage ? settings.gptImageModel || OpenRouterImageService.MODEL_V25 : "V_3");
         this.updateTaskStatus(taskId, { status: "GENERATING_IMAGE" });
         const ideogramKey = isIdeogramV4 ? IdeogramV4Service.getApiKey() : settings.ideogramApiKey;
-        if (isGptImage2 && !settings.openRouterApiKey || !isGptImage2 && !ideogramKey) {
-          const missingKey = isGptImage2 ? "OpenRouter API Key" : "Ideogram API Key";
+        if (isGptImage && !settings.openRouterApiKey || !isGptImage && !ideogramKey) {
+          const missingKey = isGptImage ? "OpenRouter API Key" : "Ideogram API Key";
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ERROR",
@@ -233714,7 +233721,7 @@ ${referenceSection}` : ""}`;
           const localFilePath = import_path84.default.join(designsDir, `${cleanId}.png`);
           const localUrl = `/api/v1/designs/image/${encodeURIComponent(taskId)}`;
           let sourceUrl = localUrl;
-          if (isGptImage2) {
+          if (isGptImage) {
             const result2 = await OpenRouterImageService.generateImage({
               model,
               prompt,
@@ -233780,7 +233787,7 @@ ${referenceSection}` : ""}`;
         } catch (err) {
           const latencyMs = Date.now() - start3;
           const errorMsg = err.message || `Fehler bei der ${providerLabel} Bildgenerierung`;
-          if (isGptImage2 && (err?.status === 402 || err?.status === 403)) {
+          if (isGptImage && (err?.status === 402 || err?.status === 403)) {
             LLMService.tripCircuitBreaker(errorMsg);
           }
           this.addEvent(taskId, {

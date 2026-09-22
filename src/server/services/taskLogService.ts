@@ -392,6 +392,13 @@ export class TaskLogService {
     });
   }
 
+  /**
+   * Alias for processTaskWithOpenRouter
+   */
+  static async generatePromptWithOpenRouter(taskId: string, options?: { skipPreFlight?: boolean }) {
+    return this.processTaskWithOpenRouter(taskId, options);
+  }
+
   private static async processTaskWithOpenRouterExclusive(taskId: string, options?: { skipPreFlight?: boolean }) {
     const task = this.getTaskLogById(taskId);
     if (!task) return;
@@ -548,6 +555,7 @@ export class TaskLogService {
 
     // 2. Prepare System Prompt & User Message
     const imageGeneration = task.imageGeneration;
+    const isGptImage = imageGeneration?.provider === 'GPT_IMAGE_2';
     const isGptImage25 = isGptImage && imageGeneration?.model === 'openai/gpt-image-2.5-sunburst';
     const bgMode = imageGeneration?.background || (isGptImage25 ? 'transparent' : 'deep_blue');
     const chromaKeyDirective = (modelName: string) => `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): ${modelName}. Create a prompt specifically for ${modelName}. Background mode: ${bgMode}. Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement.`;
