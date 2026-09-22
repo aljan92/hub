@@ -22,7 +22,8 @@ import {
   Check,
   FileText,
   Palette,
-  Layers
+  Layers,
+  Scale
 } from 'lucide-react';
 
 import { DesignTaskLog, TaskSummary, isTaskAwaitingUserAction } from '../../types/tasks';
@@ -38,9 +39,10 @@ import { useTaskWebSocket } from '../hooks/useTaskWebSocket';
 interface FieldTmWordChipsProps {
   label: string;
   fieldData?: any;
+  fairUseEvaluation?: any;
 }
 
-const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData }) => {
+const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData, fairUseEvaluation }) => {
   if (!fieldData) return null;
 
   const totalHits = fieldData.totalHits ?? 0;
@@ -96,6 +98,27 @@ const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData })
         </span>
       </div>
 
+      {/* Optional Fair Use Overall Assessment Banner */}
+      {fairUseEvaluation && (
+        <div className={`p-2 rounded-lg border text-[11px] flex items-center justify-between gap-2 ${
+          fairUseEvaluation.overallVerdict === 'SAFE_FAIR_USE'
+            ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+            : 'bg-amber-950/40 border-amber-500/40 text-amber-200'
+        }`}>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Scale className={`w-3.5 h-3.5 shrink-0 ${fairUseEvaluation.overallVerdict === 'SAFE_FAIR_USE' ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <span className="font-semibold">{fairUseEvaluation.summary || (fairUseEvaluation.overallVerdict === 'SAFE_FAIR_USE' ? 'Fair Use bestätigt' : 'Konflikte erkannt')}</span>
+          </div>
+          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase shrink-0 ${
+            fairUseEvaluation.overallVerdict === 'SAFE_FAIR_USE'
+              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+              : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+          }`}>
+            {fairUseEvaluation.overallVerdict === 'SAFE_FAIR_USE' ? 'Fair Use' : 'Konflikt'}
+          </span>
+        </div>
+      )}
+
       {/* Word-by-Word Breakdown */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
         {termList.map(({ term, hits }, i) => {
@@ -113,6 +136,11 @@ const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData })
           const markName = firstHit.registeredMark || firstHit.mark || firstHit.trademark || firstHit.wordmark || firstHit.searchedTerm || term;
           const status = firstHit.status || 'LIVE';
           const regOrSerial = firstHit.serialNumber ? `SN: ${firstHit.serialNumber}` : (firstHit.registrationNumber ? `#${firstHit.registrationNumber}` : '');
+
+          const evalHit = fairUseEvaluation?.evaluatedHits?.find((eh: any) =>
+            eh.searchedTerm?.toLowerCase() === term.toLowerCase() ||
+            eh.registeredMark?.toLowerCase() === markName.toLowerCase()
+          );
 
           return (
             <div
@@ -137,6 +165,24 @@ const FieldTmWordChips: React.FC<FieldTmWordChipsProps> = ({ label, fieldData })
                 <span className="truncate max-w-[180px]" title={markName}>Marke: {markName}</span>
                 <span className="shrink-0">{status} {regOrSerial ? `• ${regOrSerial}` : ''}</span>
               </div>
+
+              {evalHit && (
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800 text-[10px]">
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 shrink-0 ${
+                    evalHit.isFairUse || evalHit.decision === 'KEEP'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-rose-500/30 text-rose-200 border border-rose-500/50'
+                  }`}>
+                    <Scale className="w-2.5 h-2.5" />
+                    {evalHit.isFairUse || evalHit.decision === 'KEEP' ? 'Fair Use' : 'Konflikt'}
+                  </span>
+                  {evalHit.reason && (
+                    <span className="text-slate-300 italic truncate max-w-[200px]" title={evalHit.reason}>
+                      {evalHit.reason}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -609,11 +655,17 @@ export const TasksView: React.FC = () => {
   const setRevectorizeMaxColors = review.setter('revectorizeMaxColors');
   const isSubmitting = isCheckingTm || Boolean(selectedTaskId && submittingTaskIds.has(selectedTaskId));
   const [checkingField, setCheckingField] = useState<string | null>(null);
+  const [evaluatingField, setEvaluatingField] = useState<string | null>(null);
+  const [rewritingField, setRewritingField] = useState<string | null>(null);
   const [singleFieldResults, setSingleFieldResults] = useState<Record<string, any>>({});
+  const [fieldFairUse, setFieldFairUse] = useState<Record<string, any>>({});
 
   useEffect(() => {
     setSingleFieldResults({});
+    setFieldFairUse({});
     setCheckingField(null);
+    setEvaluatingField(null);
+    setRewritingField(null);
   }, [activeTask?.id]);
 
   useEffect(() => {
@@ -858,6 +910,80 @@ export const TasksView: React.FC = () => {
       showNotification('error', err.message || 'Verbindungsfehler');
     } finally {
       setCheckingField(null);
+    }
+  };
+
+  const handleEvaluateFairUse = async (
+    field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description',
+    text: string,
+    hits?: any[]
+  ) => {
+    if (!activeTask || evaluatingField || checkingField || rewritingField || isCheckingTm) return;
+    setEvaluatingField(field);
+    try {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/evaluate-field-tm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field, text, hits })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFieldFairUse(prev => ({ ...prev, [field]: data }));
+        if (data.overallVerdict === 'SAFE_FAIR_USE') {
+          showNotification('success', `Fair Use (${field}): ${data.summary}`);
+        } else {
+          showNotification('info', `Fair Use (${field}): ${data.summary}`);
+        }
+      } else {
+        showNotification('error', data.error || `Fair-Use-Prüfung von ${field} fehlgeschlagen`);
+      }
+    } catch (err: any) {
+      showNotification('error', err.message || 'Verbindungsfehler');
+    } finally {
+      setEvaluatingField(null);
+    }
+  };
+
+  const handleRewriteSingleField = async (
+    field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description',
+    text: string,
+    hits?: any[]
+  ) => {
+    if (!activeTask || rewritingField || checkingField || evaluatingField || isCheckingTm) return;
+    setRewritingField(field);
+    try {
+      const fairUseEvaluation = fieldFairUse[field];
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/rewrite-field-tm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field, text, hits, fairUseEvaluation })
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.rewrittenText) {
+          setEditableListing(prev => ({ ...prev, [field]: data.rewrittenText }));
+        }
+        if (data.usptoResult) {
+          setSingleFieldResults(prev => ({ ...prev, [field]: data.usptoResult }));
+        }
+        // Invalidate old fair-use assessment since text changed
+        setFieldFairUse(prev => {
+          const next = { ...prev };
+          delete next[field];
+          return next;
+        });
+
+        const actionsMsg = Array.isArray(data.actionsTaken) && data.actionsTaken.length > 0
+          ? data.actionsTaken.join(', ')
+          : 'Feld erfolgreich umgeschrieben';
+        showNotification('success', `${actionsMsg} (inkl. automatischem USPTO-Recheck)`);
+      } else {
+        showNotification('error', data.error || `Rewrite von ${field} fehlgeschlagen`);
+      }
+    } catch (err: any) {
+      showNotification('error', err.message || 'Verbindungsfehler');
+    } finally {
+      setRewritingField(null);
     }
   };
 
@@ -2292,167 +2418,317 @@ export const TasksView: React.FC = () => {
                       {/* Listing Fields Editor */}
                       <div className="space-y-4">
                         {/* Brand */}
-                        <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-semibold text-slate-300 uppercase tracking-wider">Brand Name (40–50 Zeichen)</span>
-                            <div className="flex items-center space-x-2">
-                              <span className={`font-mono text-[10px] font-bold ${editableListing.brand.length > 50 ? 'text-rose-400' : 'text-slate-400'}`}>
-                                {editableListing.brand.length}/50
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleCheckSingleField('brand', editableListing.brand)}
-                                disabled={checkingField !== null || isCheckingTm || !editableListing.brand.trim()}
-                                className="px-2.5 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
-                                title="Nur Brand Name bei USPTO prüfen"
-                              >
-                                <Search className={`w-3 h-3 ${checkingField === 'brand' ? 'animate-spin' : ''}`} />
-                                <span>{checkingField === 'brand' ? 'Prüfe...' : 'USPTO prüfen'}</span>
-                              </button>
-                            </div>
-                          </div>
-                          <input
-                            type="text"
-                            value={editableListing.brand}
-                            onChange={(e) => setEditableListing({ ...editableListing, brand: e.target.value })}
-                            className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
-                            placeholder="Brand Name eingeben..."
-                          />
-                          <FieldTmWordChips label="Brand" fieldData={getFieldData('brand')} />
-                          {brandHits.length > 0 && (
-                            <div className="p-2.5 rounded-lg bg-rose-950/30 border border-rose-500/40 text-[11px] text-rose-200 flex items-start gap-2 mt-1.5">
-                              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                              <div>
-                                <span className="font-bold text-rose-300">Brand enthält geschützte Marken: </span>
-                                <span>
-                                  {brandHits.map((h: any) => h.registeredMark || h.searchedTerm).filter(Boolean).join(', ')}.
-                                  {brandHasK25 ? ' Mindestens ein Treffer liegt in Klasse 25 (Bekleidung).' : ''}
-                                  {' '}Amazon verbietet geschützte Marken im Brand. Bitte ändere den Brand-Namen, bevor du den Task freigibst.
-                                </span>
+                        {(() => {
+                          const field = 'brand';
+                          const data = getFieldData(field);
+                          const isChecking = checkingField === field;
+                          const isEvaluating = evaluatingField === field;
+                          const isRewriting = rewritingField === field;
+                          const isBusy = checkingField !== null || evaluatingField !== null || rewritingField !== null || isCheckingTm;
+                          return (
+                            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-300 uppercase tracking-wider">Brand Name (40–50 Zeichen)</span>
+                                <div className="flex items-center space-x-1.5">
+                                  <span className={`font-mono text-[10px] font-bold mr-1 ${editableListing.brand.length > 50 ? 'text-rose-400' : 'text-slate-400'}`}>
+                                    {editableListing.brand.length}/50
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCheckSingleField('brand', editableListing.brand)}
+                                    disabled={isBusy || !editableListing.brand.trim()}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Brand Name bei USPTO prüfen"
+                                  >
+                                    <Search className={`w-3 h-3 ${isChecking ? 'animate-spin' : ''}`} />
+                                    <span>{isChecking ? 'Prüfe...' : 'USPTO'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEvaluateFairUse('brand', editableListing.brand, data?.hits)}
+                                    disabled={isBusy || !editableListing.brand.trim() || !data?.totalHits}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Brand-Treffer auf Fair Use prüfen"
+                                  >
+                                    <Scale className={`w-3 h-3 ${isEvaluating ? 'animate-spin' : ''}`} />
+                                    <span>{isEvaluating ? 'Fair Use...' : 'Fair Use'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRewriteSingleField('brand', editableListing.brand, data?.hits)}
+                                    disabled={isBusy || !editableListing.brand.trim()}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Brand mit KI umschreiben und automatisch per USPTO prüfen"
+                                  >
+                                    <Sparkles className={`w-3 h-3 ${isRewriting ? 'animate-spin' : ''}`} />
+                                    <span>{isRewriting ? 'Rewrite...' : 'Rewrite'}</span>
+                                  </button>
+                                </div>
                               </div>
+                              <input
+                                type="text"
+                                value={editableListing.brand}
+                                onChange={(e) => setEditableListing({ ...editableListing, brand: e.target.value })}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                                placeholder="Brand Name eingeben..."
+                              />
+                              <FieldTmWordChips label="Brand" fieldData={data} fairUseEvaluation={fieldFairUse['brand']} />
+                              {brandHits.length > 0 && (
+                                <div className="p-2.5 rounded-lg bg-rose-950/30 border border-rose-500/40 text-[11px] text-rose-200 flex items-start gap-2 mt-1.5">
+                                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                                  <div>
+                                    <span className="font-bold text-rose-300">Brand enthält geschützte Marken: </span>
+                                    <span>
+                                      {brandHits.map((h: any) => h.registeredMark || h.searchedTerm).filter(Boolean).join(', ')}.
+                                      {brandHasK25 ? ' Mindestens ein Treffer liegt in Klasse 25 (Bekleidung).' : ''}
+                                      {' '}Amazon verbietet geschützte Marken im Brand. Bitte ändere den Brand-Namen, bevor du den Task freigibst.
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
+                          );
+                        })()}
 
                         {/* Title */}
-                        <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-semibold text-slate-300 uppercase tracking-wider">Design Title (50–60 Zeichen, locked Subniche Suffix)</span>
-                            <div className="flex items-center space-x-2">
-                              <span className={`font-mono text-[10px] font-bold ${editableListing.title.length > 60 ? 'text-rose-400' : 'text-slate-400'}`}>
-                                {editableListing.title.length}/60
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleCheckSingleField('title', editableListing.title)}
-                                disabled={checkingField !== null || isCheckingTm || !editableListing.title.trim()}
-                                className="px-2.5 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
-                                title="Nur Design Title bei USPTO prüfen"
-                              >
-                                <Search className={`w-3 h-3 ${checkingField === 'title' ? 'animate-spin' : ''}`} />
-                                <span>{checkingField === 'title' ? 'Prüfe...' : 'USPTO prüfen'}</span>
-                              </button>
+                        {(() => {
+                          const field = 'title';
+                          const data = getFieldData(field);
+                          const isChecking = checkingField === field;
+                          const isEvaluating = evaluatingField === field;
+                          const isRewriting = rewritingField === field;
+                          const isBusy = checkingField !== null || evaluatingField !== null || rewritingField !== null || isCheckingTm;
+                          return (
+                            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-300 uppercase tracking-wider">Design Title (50–60 Zeichen, locked Subniche Suffix)</span>
+                                <div className="flex items-center space-x-1.5">
+                                  <span className={`font-mono text-[10px] font-bold mr-1 ${editableListing.title.length > 60 ? 'text-rose-400' : 'text-slate-400'}`}>
+                                    {editableListing.title.length}/60
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCheckSingleField('title', editableListing.title)}
+                                    disabled={isBusy || !editableListing.title.trim()}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Design Title bei USPTO prüfen"
+                                  >
+                                    <Search className={`w-3 h-3 ${isChecking ? 'animate-spin' : ''}`} />
+                                    <span>{isChecking ? 'Prüfe...' : 'USPTO'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEvaluateFairUse('title', editableListing.title, data?.hits)}
+                                    disabled={isBusy || !editableListing.title.trim() || !data?.totalHits}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Title-Treffer auf Fair Use prüfen"
+                                  >
+                                    <Scale className={`w-3 h-3 ${isEvaluating ? 'animate-spin' : ''}`} />
+                                    <span>{isEvaluating ? 'Fair Use...' : 'Fair Use'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRewriteSingleField('title', editableListing.title, data?.hits)}
+                                    disabled={isBusy || !editableListing.title.trim()}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Title mit KI umschreiben und automatisch per USPTO prüfen"
+                                  >
+                                    <Sparkles className={`w-3 h-3 ${isRewriting ? 'animate-spin' : ''}`} />
+                                    <span>{isRewriting ? 'Rewrite...' : 'Rewrite'}</span>
+                                  </button>
+                                </div>
+                              </div>
+                              <input
+                                type="text"
+                                value={editableListing.title}
+                                onChange={(e) => setEditableListing({ ...editableListing, title: e.target.value })}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-purple-300 font-semibold focus:outline-none focus:border-purple-500"
+                                placeholder="Design Title eingeben..."
+                              />
+                              <FieldTmWordChips label="Title" fieldData={data} fairUseEvaluation={fieldFairUse['title']} />
                             </div>
-                          </div>
-                          <input
-                            type="text"
-                            value={editableListing.title}
-                            onChange={(e) => setEditableListing({ ...editableListing, title: e.target.value })}
-                            className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-purple-300 font-semibold focus:outline-none focus:border-purple-500"
-                            placeholder="Design Title eingeben..."
-                          />
-                          <FieldTmWordChips label="Title" fieldData={getFieldData('title')} />
-                        </div>
+                          );
+                        })()}
 
                         {/* Bullet 1 */}
-                        <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-semibold text-slate-300 uppercase tracking-wider">Feature Bullet 1 (230–256 Zeichen)</span>
-                            <div className="flex items-center space-x-2">
-                              <span className={`font-mono text-[10px] font-bold ${editableListing.bullet1.length > 256 ? 'text-rose-400' : 'text-slate-400'}`}>
-                                {editableListing.bullet1.length}/256
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleCheckSingleField('bullet1', editableListing.bullet1)}
-                                disabled={checkingField !== null || isCheckingTm || !editableListing.bullet1.trim()}
-                                className="px-2.5 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
-                                title="Nur Feature Bullet 1 bei USPTO prüfen"
-                              >
-                                <Search className={`w-3 h-3 ${checkingField === 'bullet1' ? 'animate-spin' : ''}`} />
-                                <span>{checkingField === 'bullet1' ? 'Prüfe...' : 'USPTO prüfen'}</span>
-                              </button>
+                        {(() => {
+                          const field = 'bullet1';
+                          const data = getFieldData(field);
+                          const isChecking = checkingField === field;
+                          const isEvaluating = evaluatingField === field;
+                          const isRewriting = rewritingField === field;
+                          const isBusy = checkingField !== null || evaluatingField !== null || rewritingField !== null || isCheckingTm;
+                          return (
+                            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-300 uppercase tracking-wider">Feature Bullet 1 (230–256 Zeichen)</span>
+                                <div className="flex items-center space-x-1.5">
+                                  <span className={`font-mono text-[10px] font-bold mr-1 ${editableListing.bullet1.length > 256 ? 'text-rose-400' : 'text-slate-400'}`}>
+                                    {editableListing.bullet1.length}/256
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCheckSingleField('bullet1', editableListing.bullet1)}
+                                    disabled={isBusy || !editableListing.bullet1.trim()}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Bullet 1 bei USPTO prüfen"
+                                  >
+                                    <Search className={`w-3 h-3 ${isChecking ? 'animate-spin' : ''}`} />
+                                    <span>{isChecking ? 'Prüfe...' : 'USPTO'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEvaluateFairUse('bullet1', editableListing.bullet1, data?.hits)}
+                                    disabled={isBusy || !editableListing.bullet1.trim() || !data?.totalHits}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Bullet 1-Treffer auf Fair Use prüfen"
+                                  >
+                                    <Scale className={`w-3 h-3 ${isEvaluating ? 'animate-spin' : ''}`} />
+                                    <span>{isEvaluating ? 'Fair Use...' : 'Fair Use'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRewriteSingleField('bullet1', editableListing.bullet1, data?.hits)}
+                                    disabled={isBusy || !editableListing.bullet1.trim()}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Bullet 1 mit KI umschreiben und automatisch per USPTO prüfen"
+                                  >
+                                    <Sparkles className={`w-3 h-3 ${isRewriting ? 'animate-spin' : ''}`} />
+                                    <span>{isRewriting ? 'Rewrite...' : 'Rewrite'}</span>
+                                  </button>
+                                </div>
+                              </div>
+                              <textarea
+                                value={editableListing.bullet1}
+                                onChange={(e) => setEditableListing({ ...editableListing, bullet1: e.target.value })}
+                                rows={6}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[140px]"
+                                placeholder="Feature Bullet 1 eingeben..."
+                              />
+                              <FieldTmWordChips label="Bullet 1" fieldData={data} fairUseEvaluation={fieldFairUse['bullet1']} />
                             </div>
-                          </div>
-                          <textarea
-                            value={editableListing.bullet1}
-                            onChange={(e) => setEditableListing({ ...editableListing, bullet1: e.target.value })}
-                            rows={6}
-                            className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[140px]"
-                            placeholder="Feature Bullet 1 eingeben..."
-                          />
-                          <FieldTmWordChips label="Bullet 1" fieldData={getFieldData('bullet1')} />
-                        </div>
+                          );
+                        })()}
 
                         {/* Bullet 2 */}
-                        <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-semibold text-slate-300 uppercase tracking-wider">Feature Bullet 2 (230–256 Zeichen)</span>
-                            <div className="flex items-center space-x-2">
-                              <span className={`font-mono text-[10px] font-bold ${editableListing.bullet2.length > 256 ? 'text-rose-400' : 'text-slate-400'}`}>
-                                {editableListing.bullet2.length}/256
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleCheckSingleField('bullet2', editableListing.bullet2)}
-                                disabled={checkingField !== null || isCheckingTm || !editableListing.bullet2.trim()}
-                                className="px-2.5 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
-                                title="Nur Feature Bullet 2 bei USPTO prüfen"
-                              >
-                                <Search className={`w-3 h-3 ${checkingField === 'bullet2' ? 'animate-spin' : ''}`} />
-                                <span>{checkingField === 'bullet2' ? 'Prüfe...' : 'USPTO prüfen'}</span>
-                              </button>
+                        {(() => {
+                          const field = 'bullet2';
+                          const data = getFieldData(field);
+                          const isChecking = checkingField === field;
+                          const isEvaluating = evaluatingField === field;
+                          const isRewriting = rewritingField === field;
+                          const isBusy = checkingField !== null || evaluatingField !== null || rewritingField !== null || isCheckingTm;
+                          return (
+                            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-300 uppercase tracking-wider">Feature Bullet 2 (230–256 Zeichen)</span>
+                                <div className="flex items-center space-x-1.5">
+                                  <span className={`font-mono text-[10px] font-bold mr-1 ${editableListing.bullet2.length > 256 ? 'text-rose-400' : 'text-slate-400'}`}>
+                                    {editableListing.bullet2.length}/256
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCheckSingleField('bullet2', editableListing.bullet2)}
+                                    disabled={isBusy || !editableListing.bullet2.trim()}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Bullet 2 bei USPTO prüfen"
+                                  >
+                                    <Search className={`w-3 h-3 ${isChecking ? 'animate-spin' : ''}`} />
+                                    <span>{isChecking ? 'Prüfe...' : 'USPTO'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEvaluateFairUse('bullet2', editableListing.bullet2, data?.hits)}
+                                    disabled={isBusy || !editableListing.bullet2.trim() || !data?.totalHits}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Bullet 2-Treffer auf Fair Use prüfen"
+                                  >
+                                    <Scale className={`w-3 h-3 ${isEvaluating ? 'animate-spin' : ''}`} />
+                                    <span>{isEvaluating ? 'Fair Use...' : 'Fair Use'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRewriteSingleField('bullet2', editableListing.bullet2, data?.hits)}
+                                    disabled={isBusy || !editableListing.bullet2.trim()}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Bullet 2 mit KI umschreiben und automatisch per USPTO prüfen"
+                                  >
+                                    <Sparkles className={`w-3 h-3 ${isRewriting ? 'animate-spin' : ''}`} />
+                                    <span>{isRewriting ? 'Rewrite...' : 'Rewrite'}</span>
+                                  </button>
+                                </div>
+                              </div>
+                              <textarea
+                                value={editableListing.bullet2}
+                                onChange={(e) => setEditableListing({ ...editableListing, bullet2: e.target.value })}
+                                rows={6}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[140px]"
+                                placeholder="Feature Bullet 2 eingeben..."
+                              />
+                              <FieldTmWordChips label="Bullet 2" fieldData={data} fairUseEvaluation={fieldFairUse['bullet2']} />
                             </div>
-                          </div>
-                          <textarea
-                            value={editableListing.bullet2}
-                            onChange={(e) => setEditableListing({ ...editableListing, bullet2: e.target.value })}
-                            rows={6}
-                            className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[140px]"
-                            placeholder="Feature Bullet 2 eingeben..."
-                          />
-                          <FieldTmWordChips label="Bullet 2" fieldData={getFieldData('bullet2')} />
-                        </div>
+                          );
+                        })()}
 
                         {/* Product Description */}
-                        <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-semibold text-slate-300 uppercase tracking-wider">Product Description (300–600 Zeichen)</span>
-                            <div className="flex items-center space-x-2">
-                              <span className={`font-mono text-[10px] font-bold ${editableListing.description.length > 2000 ? 'text-rose-400' : 'text-slate-400'}`}>
-                                {editableListing.description.length}/2000
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleCheckSingleField('description', editableListing.description)}
-                                disabled={checkingField !== null || isCheckingTm || !editableListing.description.trim()}
-                                className="px-2.5 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
-                                title="Nur Product Description bei USPTO prüfen"
-                              >
-                                <Search className={`w-3 h-3 ${checkingField === 'description' ? 'animate-spin' : ''}`} />
-                                <span>{checkingField === 'description' ? 'Prüfe...' : 'USPTO prüfen'}</span>
-                              </button>
+                        {(() => {
+                          const field = 'description';
+                          const data = getFieldData(field);
+                          const isChecking = checkingField === field;
+                          const isEvaluating = evaluatingField === field;
+                          const isRewriting = rewritingField === field;
+                          const isBusy = checkingField !== null || evaluatingField !== null || rewritingField !== null || isCheckingTm;
+                          return (
+                            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-300 uppercase tracking-wider">Product Description (300–600 Zeichen)</span>
+                                <div className="flex items-center space-x-1.5">
+                                  <span className={`font-mono text-[10px] font-bold mr-1 ${editableListing.description.length > 2000 ? 'text-rose-400' : 'text-slate-400'}`}>
+                                    {editableListing.description.length}/2000
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCheckSingleField('description', editableListing.description)}
+                                    disabled={isBusy || !editableListing.description.trim()}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Description bei USPTO prüfen"
+                                  >
+                                    <Search className={`w-3 h-3 ${isChecking ? 'animate-spin' : ''}`} />
+                                    <span>{isChecking ? 'Prüfe...' : 'USPTO'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEvaluateFairUse('description', editableListing.description, data?.hits)}
+                                    disabled={isBusy || !editableListing.description.trim() || !data?.totalHits}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Description-Treffer auf Fair Use prüfen"
+                                  >
+                                    <Scale className={`w-3 h-3 ${isEvaluating ? 'animate-spin' : ''}`} />
+                                    <span>{isEvaluating ? 'Fair Use...' : 'Fair Use'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRewriteSingleField('description', editableListing.description, data?.hits)}
+                                    disabled={isBusy || !editableListing.description.trim()}
+                                    className="px-2 py-1 rounded-md text-[10px] font-semibold bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                    title="Description mit KI umschreiben und automatisch per USPTO prüfen"
+                                  >
+                                    <Sparkles className={`w-3 h-3 ${isRewriting ? 'animate-spin' : ''}`} />
+                                    <span>{isRewriting ? 'Rewrite...' : 'Rewrite'}</span>
+                                  </button>
+                                </div>
+                              </div>
+                              <textarea
+                                value={editableListing.description}
+                                onChange={(e) => setEditableListing({ ...editableListing, description: e.target.value })}
+                                rows={10}
+                                placeholder="Produktbeschreibung eingeben..."
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[200px]"
+                              />
+                              <FieldTmWordChips label="Description" fieldData={data} fairUseEvaluation={fieldFairUse['description']} />
                             </div>
-                          </div>
-                          <textarea
-                            value={editableListing.description}
-                            onChange={(e) => setEditableListing({ ...editableListing, description: e.target.value })}
-                            rows={10}
-                            placeholder="Produktbeschreibung eingeben..."
-                            className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[200px]"
-                          />
-                          <FieldTmWordChips label="Description" fieldData={getFieldData('description')} />
-                        </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Checkpoint 3 Action Buttons */}

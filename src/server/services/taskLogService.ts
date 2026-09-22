@@ -2498,6 +2498,104 @@ export class TaskLogService {
   }
 
   /**
+   * Checkpoint 3: Evaluate single field trademark hits for Fair Use
+   */
+  static async evaluateSingleFieldTm(
+    taskId: string,
+    field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description',
+    text: string,
+    hits?: any[]
+  ) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+
+    const quote = task.payload?.quote || task.quote || '';
+    const niche1 = task.niche1 || task.customAnswers?.niche1 || '';
+    const niche2 = task.niche2 || task.customAnswers?.niche2 || '';
+    const subniche = task.subniche || task.customAnswers?.subniche || '';
+
+    // If hits were not passed from caller, scan USPTO first
+    let fieldHits = hits;
+    if (!fieldHits || !Array.isArray(fieldHits)) {
+      const scan = await this.checkSingleFieldTm(taskId, field, text);
+      fieldHits = scan.hits || [];
+    }
+
+    const otherFields = {
+      brand: task.listingResult?.en?.brand || '',
+      title: task.listingResult?.en?.title || '',
+      bullet1: task.listingResult?.en?.bullet1 || '',
+      bullet2: task.listingResult?.en?.bullet2 || '',
+      description: task.listingResult?.en?.description || ''
+    };
+
+    return LLMService.evaluateFieldFairUse({
+      field,
+      fieldText: text,
+      fieldHits,
+      quote,
+      niche1,
+      niche2,
+      subniche,
+      otherFields,
+      sessionId: `task-${taskId}-${field}-fairuse`
+    });
+  }
+
+  /**
+   * Checkpoint 3: Rewrite single field to resolve trademark conflicts
+   * Automatically executes scanSingleField on the rewritten text so frontend gets immediate updated USPTO chips.
+   */
+  static async rewriteSingleFieldTm(
+    taskId: string,
+    field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description',
+    text: string,
+    hits?: any[],
+    fairUseEvaluation?: any
+  ) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+
+    const quote = task.payload?.quote || task.quote || '';
+    const niche1 = task.niche1 || task.customAnswers?.niche1 || '';
+    const niche2 = task.niche2 || task.customAnswers?.niche2 || '';
+    const subniche = task.subniche || task.customAnswers?.subniche || '';
+    const forbiddenTerms = task.trademarkWorkflowState?.forbiddenTerms || [];
+
+    const otherFields = {
+      brand: task.listingResult?.en?.brand || '',
+      title: task.listingResult?.en?.title || '',
+      bullet1: task.listingResult?.en?.bullet1 || '',
+      bullet2: task.listingResult?.en?.bullet2 || '',
+      description: task.listingResult?.en?.description || ''
+    };
+
+    const rewriteResult = await LLMService.rewriteSingleField({
+      field,
+      fieldText: text,
+      fieldHits: hits,
+      fairUseEvaluation,
+      quote,
+      niche1,
+      niche2,
+      subniche,
+      otherFields,
+      forbiddenTerms,
+      sessionId: `task-${taskId}-${field}-rewrite`
+    });
+
+    // Auto-scan new text with USPTO
+    const usptoResult = await this.checkSingleFieldTm(taskId, field, rewriteResult.rewrittenText);
+
+    return {
+      field,
+      rewrittenText: rewriteResult.rewrittenText,
+      actionsTaken: rewriteResult.actionsTaken,
+      usptoResult
+    };
+  }
+
+  /**
    * Checkpoint 3: Submit Manual Trademark Review
    */
   static async submitTmReview(taskId: string, params: {

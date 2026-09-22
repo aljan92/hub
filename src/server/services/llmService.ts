@@ -1600,4 +1600,271 @@ No markdown backticks, no preamble, no explanation.${avoidText}`;
 
     return concepts;
   }
+
+  /**
+   * Evaluates trademark hits of a single field for Fair Use vs. critical conflict.
+   * Fast, low-token LLM call specifically focused on one field's context and hits.
+   */
+  static async evaluateFieldFairUse(params: {
+    field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description';
+    fieldText: string;
+    fieldHits: any[];
+    quote?: string;
+    niche1?: string;
+    niche2?: string;
+    subniche?: string;
+    otherFields?: Partial<EnglishListing>;
+    sessionId?: string;
+  }): Promise<{
+    field: string;
+    overallVerdict: 'SAFE_FAIR_USE' | 'HAS_CONFLICTS';
+    evaluatedHits: Array<{
+      searchedTerm: string;
+      registeredMark: string;
+      isFairUse: boolean;
+      riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+      classification: 'DESCRIPTIVE_FAIR_USE' | 'INCIDENTAL_DICTIONARY_OVERLAP' | 'DIRECT_TRADEMARK_CONFLICT';
+      decision: 'KEEP' | 'REPLACE';
+      reason: string;
+    }>;
+    summary: string;
+  }> {
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
+    const settings = loadSettings();
+
+    const simplifiedHits = (params.fieldHits || []).map((h: any) => ({
+      searchedTerm: h.searchedTerm || h.term || '',
+      registeredMark: h.registeredMark || h.mark || h.trademark || '',
+      classes: h.classes || (h.classNumber ? [h.classNumber] : [25]),
+      goodsAndServices: (h.goodsAndServices || h.goods_and_services || '').slice(0, 150),
+      status: h.status || 'LIVE'
+    }));
+
+    const systemPrompt = `You are a specialized Merch by Amazon (MBA) Trademark & IP Attorney assessing whether detected trademark hits in a single listing field are protected by Descriptive Fair Use / Incidental Dictionary Overlap or represent an actionable trademark conflict.
+
+Evaluation Principles:
+1. DESCRIPTIVE_FAIR_USE / INCIDENTAL_DICTIONARY_OVERLAP (riskLevel: LOW, decision: KEEP, isFairUse: true):
+   - Everyday dictionary words (e.g. "gift", "design", "smile", "retro", "planet", "stars", "celebrate", "mom", "dad", "coffee") used in ordinary prose or sentences without attempting to emulate a brand.
+   - Secondary class registrations (e.g. Class 9, 16, 41) that have zero presence in Class 25 (Apparel) and are used descriptively.
+2. DIRECT_TRADEMARK_CONFLICT / HIGH RISK (riskLevel: HIGH, decision: REPLACE, isFairUse: false):
+   - Any Brand Name matching a registered trademark in Class 25 (Brands identify product source and cannot claim fair use on clothing).
+   - Famous pop-culture marks, characters, movie/music titles, or registered distinctive slogans.
+   - Class 25 exact-phrase apparel marks.
+
+Output MUST be valid JSON:
+{
+  "overallVerdict": "SAFE_FAIR_USE" | "HAS_CONFLICTS",
+  "evaluatedHits": [
+    {
+      "searchedTerm": "...",
+      "registeredMark": "...",
+      "isFairUse": true,
+      "riskLevel": "LOW" | "MEDIUM" | "HIGH",
+      "classification": "DESCRIPTIVE_FAIR_USE" | "INCIDENTAL_DICTIONARY_OVERLAP" | "DIRECT_TRADEMARK_CONFLICT",
+      "decision": "KEEP" | "REPLACE",
+      "reason": "Short German explanation why this is fair use or a conflict"
+    }
+  ],
+  "summary": "Short German summary (e.g. 'Alle 2 Treffer sind harmloser Sprachgebrauch (Fair Use). Kein Umschreiben nötig.')"
+}`;
+
+    const userMessage = `Field: "${params.field}"
+Current Field Text: "${params.fieldText}"
+Design Quote / Slogan: "${params.quote || ''}"
+Niches: Primary="${params.niche1 || ''}", Subniche="${params.subniche || ''}"
+Other Listing Context:
+- Brand: "${params.otherFields?.brand || ''}"
+- Title: "${params.otherFields?.title || ''}"
+- Bullet 1: "${params.otherFields?.bullet1 || ''}"
+- Bullet 2: "${params.otherFields?.bullet2 || ''}"
+- Description: "${params.otherFields?.description || ''}"
+
+Hits found in this field:
+${JSON.stringify(simplifiedHits, null, 2)}`;
+
+    const requestPayload: any = {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.15,
+      max_tokens: 2000
+    };
+
+    if (params.sessionId) {
+      requestPayload.session_id = params.sessionId;
+    }
+
+    try {
+      const timeoutMs = (settings.llmTimeoutSeconds || 60) * 1000;
+      const res = await this.executeFetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestPayload),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+
+      if (!res.ok) throw new Error(await LLMService.parseHttpError(res, 'LLM Field Fair Use'));
+      const data = await res.json();
+      const rawContent = data.choices?.[0]?.message?.content?.trim() || '{}';
+      const parsed = this.extractJsonFromLlmResponse(rawContent) || {};
+
+      const evaluatedHits = Array.isArray(parsed.evaluatedHits) ? parsed.evaluatedHits : [];
+      const hasConflict = evaluatedHits.some((h: any) => h.isFairUse === false || h.decision === 'REPLACE' || h.riskLevel === 'HIGH');
+      const overallVerdict = parsed.overallVerdict === 'SAFE_FAIR_USE' || (!hasConflict && evaluatedHits.length > 0)
+        ? 'SAFE_FAIR_USE'
+        : (hasConflict ? 'HAS_CONFLICTS' : 'SAFE_FAIR_USE');
+
+      const summary = typeof parsed.summary === 'string' && parsed.summary.trim()
+        ? parsed.summary.trim()
+        : (overallVerdict === 'SAFE_FAIR_USE'
+          ? 'Alle Treffer als harmloser beschreibender Sprachgebrauch (Fair Use) eingestuft.'
+          : 'Enthält Markenkonflikte, die umgeschrieben werden sollten.');
+
+      return {
+        field: params.field,
+        overallVerdict,
+        evaluatedHits,
+        summary
+      };
+    } catch (err: any) {
+      console.error(`[LLMService] Error evaluating fair use for ${params.field}:`, err);
+      throw err;
+    }
+  }
+
+  /**
+   * Rewrites a single listing field to resolve trademark conflicts while preserving
+   * compliant keywords and fair-use terms, and respecting strict Amazon constraints.
+   */
+  static async rewriteSingleField(params: {
+    field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description';
+    fieldText: string;
+    fieldHits?: any[];
+    fairUseEvaluation?: any;
+    quote?: string;
+    niche1?: string;
+    niche2?: string;
+    subniche?: string;
+    otherFields?: Partial<EnglishListing>;
+    forbiddenTerms?: string[];
+    sessionId?: string;
+  }): Promise<{
+    field: string;
+    rewrittenText: string;
+    actionsTaken: string[];
+  }> {
+    const { url, headers, model } = this.getBaseUrlAndHeaders();
+    const settings = loadSettings();
+
+    const normN1 = ListingValidationService.normalizeOptionalText(params.niche1);
+    const normN2 = ListingValidationService.normalizeOptionalText(params.niche2);
+    const normSub = ListingValidationService.normalizeOptionalText(params.subniche);
+    const expectedSuffix = ListingValidationService.resolveExpectedTitleSuffix({
+      niche1: normN1,
+      niche2: normN2,
+      subniche: normSub
+    });
+
+    const fieldConstraints: Record<string, string> = {
+      brand: 'Brand name must be 40–50 characters. Distinctive, creative apparel brand name. Completely free of Class 25 trademarked terms.',
+      title: `Design Title must be 50–60 characters. Title MUST end literally with "${expectedSuffix}". Keep the suffix intact, do not duplicate it.`,
+      bullet1: 'Feature Bullet 1 must be 230–256 characters. No banned words (gift, quality, premium, best, guarantee, 100%). Engaging sales copy highlighting the design theme.',
+      bullet2: 'Feature Bullet 2 must be 230–256 characters. No banned words (gift, quality, premium, best, guarantee, 100%). Engaging sales copy highlighting the graphic style and recipient appreciation.',
+      description: 'Product Description must be 300–600 characters. Clean, Markdown-free text describing the artwork, mood, and aesthetic.'
+    };
+
+    const systemPrompt = `You are an expert Merch by Amazon (MBA) Copywriter and Trademark Specialist.
+Your mission is to rewrite ONE SINGLE field ("${params.field}") to eliminate trademark conflicts while keeping all legitimate fair-use words and high-converting keywords intact.
+
+Rules:
+1. FIELD CONSTRAINT: ${fieldConstraints[params.field] || 'Keep concise and within Amazon limits.'}
+2. FAIR USE RETENTION: If a term was evaluated as Fair Use / Incidental Dictionary Overlap, KEEP IT. Do NOT strip out harmless everyday words.
+3. CONFLICT ELIMINATION: Replace any terms flagged as trademark conflicts with safe, creative, niche-relevant synonyms.
+4. FORBIDDEN TERMS: Never use any of these forbidden terms: ${JSON.stringify(params.forbiddenTerms || [])}
+5. Return ONLY valid JSON:
+{
+  "rewrittenText": "The newly crafted field text adhering to all character limits",
+  "actionsTaken": ["Replaced term X with Y", "Adjusted phrasing to fit length constraint"]
+}`;
+
+    const userMessage = `Field to rewrite: "${params.field}"
+Current field text: "${params.fieldText}"
+Design Quote / Slogan: "${params.quote || ''}"
+Niche Context: Primary="${normN1}", Secondary="${normN2}", Subniche="${normSub}"
+Other listing fields for context:
+- Brand: "${params.otherFields?.brand || ''}"
+- Title: "${params.otherFields?.title || ''}"
+- Bullet 1: "${params.otherFields?.bullet1 || ''}"
+- Bullet 2: "${params.otherFields?.bullet2 || ''}"
+- Description: "${params.otherFields?.description || ''}"
+
+Trademark Hits in this field:
+${JSON.stringify(params.fieldHits || [], null, 2)}
+
+Fair Use Assessment:
+${JSON.stringify(params.fairUseEvaluation || 'Not yet evaluated; treat common dictionary words as fair use and replace distinctive marks.', null, 2)}
+
+Rewrite ONLY the field "${params.field}".`;
+
+    const requestPayload: any = {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+      max_tokens: 1500
+    };
+
+    if (params.sessionId) {
+      requestPayload.session_id = params.sessionId;
+    }
+
+    try {
+      const timeoutMs = (settings.llmTimeoutSeconds || 60) * 1000;
+      const res = await this.executeFetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestPayload),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+
+      if (!res.ok) throw new Error(await LLMService.parseHttpError(res, 'LLM Field Rewrite'));
+      const data = await res.json();
+      const rawContent = data.choices?.[0]?.message?.content?.trim() || '{}';
+      const parsed = this.extractJsonFromLlmResponse(rawContent) || {};
+
+      let rewrittenText = typeof parsed.rewrittenText === 'string' ? parsed.rewrittenText.trim() : '';
+      const actionsTaken = Array.isArray(parsed.actionsTaken) ? parsed.actionsTaken : ['Feld umgeschrieben'];
+
+      // Post-process title suffix safety if title was rewritten
+      if (params.field === 'title' && expectedSuffix) {
+        if (!rewrittenText.toLowerCase().endsWith(expectedSuffix.toLowerCase())) {
+          // If suffix is missing, append it while respecting max 60 chars
+          const availableForPrefix = 60 - expectedSuffix.length - 1;
+          const prefix = rewrittenText.slice(0, Math.max(0, availableForPrefix)).trim();
+          rewrittenText = `${prefix} ${expectedSuffix}`.trim();
+        }
+      }
+
+      // If LLM returned empty, fall back to current text
+      if (!rewrittenText) {
+        rewrittenText = params.fieldText;
+      }
+
+      return {
+        field: params.field,
+        rewrittenText,
+        actionsTaken
+      };
+    } catch (err: any) {
+      console.error(`[LLMService] Error rewriting field ${params.field}:`, err);
+      throw err;
+    }
+  }
 }
+

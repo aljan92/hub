@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
 import { TrademarkService } from '../src/server/services/trademarkService.js';
+import { LLMService } from '../src/server/services/llmService.js';
+import { TaskLogService } from '../src/server/services/taskLogService.js';
 
 async function runTests() {
   console.log('🧪 Starting Trademark Single Field Scan Tests...');
 
   const originalQuery = TrademarkService.queryUsptoBatch;
+  const originalFetch = (LLMService as any).executeFetch;
+  const originalGetTask = TaskLogService.getTaskLogById;
+
   try {
     // Test 1: Empty text produces 0 terms scanned and 0 hits
     const emptyResult = await TrademarkService.scanSingleField({
@@ -128,11 +133,115 @@ async function runTests() {
     assert.equal(secondaryResult.hits[0].field, 'bullet1');
     console.log('✅ Test 4: Secondary class hit hasInfringementClass25 is false');
 
+    // Test 5: LLMService.evaluateFieldFairUse
+    (LLMService as any).executeFetch = async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              overallVerdict: 'SAFE_FAIR_USE',
+              evaluatedHits: [
+                {
+                  searchedTerm: 'enjoy',
+                  registeredMark: 'ENJOY',
+                  isFairUse: true,
+                  riskLevel: 'LOW',
+                  classification: 'DESCRIPTIVE_FAIR_USE',
+                  decision: 'KEEP',
+                  reason: 'Common dictionary word used in ordinary descriptive sentence.'
+                }
+              ],
+              summary: '1 Treffer als harmloser Sprachgebrauch (Fair Use) eingestuft.'
+            })
+          }
+        }]
+      })
+    });
+
+    const fairUseRes = await LLMService.evaluateFieldFairUse({
+      field: 'bullet1',
+      fieldText: 'Wear this and enjoy the day',
+      fieldHits: [{ searchedTerm: 'enjoy', registeredMark: 'ENJOY', classes: [25] }]
+    });
+    assert.equal(fairUseRes.field, 'bullet1');
+    assert.equal(fairUseRes.overallVerdict, 'SAFE_FAIR_USE');
+    assert.equal(fairUseRes.evaluatedHits.length, 1);
+    assert.equal(fairUseRes.evaluatedHits[0].isFairUse, true);
+    assert.equal(fairUseRes.evaluatedHits[0].decision, 'KEEP');
+    console.log('✅ Test 5: LLMService.evaluateFieldFairUse evaluates descriptive word as Fair Use');
+
+    // Test 6: LLMService.rewriteSingleField enforces title suffix & format
+    (LLMService as any).executeFetch = async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              rewrittenText: 'Funny Retro Horse Riding Graphic Horse Lover',
+              actionsTaken: ['Replaced conflicting word with safe niche term', 'Retained locked title suffix']
+            })
+          }
+        }]
+      })
+    });
+
+    const rewriteRes = await LLMService.rewriteSingleField({
+      field: 'title',
+      fieldText: 'Bad Title With Conflict Horse Lover',
+      subniche: 'Horse Lover'
+    });
+    assert.equal(rewriteRes.field, 'title');
+    assert.ok(rewriteRes.rewrittenText.endsWith('Horse Lover'), 'Title ends with locked subniche');
+    assert.ok(rewriteRes.rewrittenText.length <= 60, 'Title fits within 60 chars');
+    assert.ok(rewriteRes.actionsTaken.length > 0, 'Actions taken are listed');
+    console.log('✅ Test 6: LLMService.rewriteSingleField preserves locked title suffix');
+
+    // Test 7: TaskLogService.rewriteSingleFieldTm executes rewrite AND auto-scans with USPTO
+    (TaskLogService as any).getTaskLogById = () => ({
+      id: 'task-test-777',
+      subniche: 'Horse Lover',
+      niche1: 'Horses',
+      status: 'AWAITING_TM_REVIEW',
+      checkpoint: 'TM_REVIEW',
+      listingResult: {
+        en: {
+          brand: 'Old Brand',
+          title: 'Old Title',
+          bullet1: 'Old B1',
+          bullet2: 'Old B2',
+          description: 'Old Desc'
+        }
+      }
+    });
+
+    // Mock clean USPTO scan on newly rewritten text
+    TrademarkService.queryUsptoBatch = async () => ({
+      hitsByTerm: {},
+      integrity: { status: 'COMPLETE' }
+    });
+
+    const taskRewriteRes = await TaskLogService.rewriteSingleFieldTm(
+      'task-test-777',
+      'brand',
+      'Old Conflicted Brand',
+      [{ searchedTerm: 'brand', registeredMark: 'BRAND', classes: [25] }]
+    );
+
+    assert.equal(taskRewriteRes.field, 'brand');
+    assert.ok(taskRewriteRes.rewrittenText, 'Rewritten text is present');
+    assert.ok(taskRewriteRes.usptoResult, 'USPTO result is auto-generated');
+    assert.equal(taskRewriteRes.usptoResult.field, 'brand');
+    assert.equal(taskRewriteRes.usptoResult.totalHits, 0, 'Auto-scan reflects clean USPTO result');
+    console.log('✅ Test 7: TaskLogService.rewriteSingleFieldTm rewrites and auto-scans with USPTO');
+
   } finally {
     TrademarkService.queryUsptoBatch = originalQuery;
+    (LLMService as any).executeFetch = originalFetch;
+    TaskLogService.getTaskLogById = originalGetTask;
   }
 
-  console.log('🎉 All 4 Trademark Single Field Scan Tests PASSED!\n');
+  console.log('🎉 All 7 Trademark Single Field Scan & Rewrite Tests PASSED!\n');
 }
 
 runTests().catch(err => {
