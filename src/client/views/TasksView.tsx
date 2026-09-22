@@ -608,6 +608,13 @@ export const TasksView: React.FC = () => {
   const revectorizeMaxColors = review.draft?.revectorizeMaxColors ?? 2;
   const setRevectorizeMaxColors = review.setter('revectorizeMaxColors');
   const isSubmitting = isCheckingTm || Boolean(selectedTaskId && submittingTaskIds.has(selectedTaskId));
+  const [checkingField, setCheckingField] = useState<string | null>(null);
+  const [singleFieldResults, setSingleFieldResults] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    setSingleFieldResults({});
+    setCheckingField(null);
+  }, [activeTask?.id]);
 
   useEffect(() => {
     if (selectedTaskId && !tasks.some(task => task.id === selectedTaskId)) {
@@ -811,6 +818,46 @@ export const TasksView: React.FC = () => {
       showNotification('error', err.message || 'Verbindungsfehler');
     } finally {
       setIsCheckingTm(false);
+    }
+  };
+
+  const handleCheckSingleField = async (
+    field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description',
+    text: string
+  ) => {
+    if (!activeTask || checkingField || isCheckingTm) return;
+    setCheckingField(field);
+    try {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/check-field-tm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field, text })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSingleFieldResults(prev => ({ ...prev, [field]: data }));
+        const fieldLabels: Record<string, string> = {
+          brand: 'Brand',
+          title: 'Title',
+          bullet1: 'Bullet 1',
+          bullet2: 'Bullet 2',
+          description: 'Description'
+        };
+        const label = fieldLabels[field] || field;
+        if (data.totalHits === 0) {
+          showNotification('success', `0 Treffer in ${label} (Sauber für Bekleidung)`);
+        } else if (data.hasInfringementClass25) {
+          showNotification('error', `${data.totalHits} Treffer in ${label} (Klasse 25 Konflikt!)`);
+        } else {
+          showNotification('info', `${data.totalHits} Treffer in ${label} (Nebenklassen)`);
+        }
+      } else {
+        showNotification('error', data.error || `Prüfung von ${field} fehlgeschlagen`);
+      }
+    } catch (err: any) {
+      showNotification('error', err.message || 'Verbindungsfehler');
+    } finally {
+      setCheckingField(null);
     }
   };
 
@@ -2093,11 +2140,33 @@ export const TasksView: React.FC = () => {
                     || auditV2?.finalDecision
                     || activeTask.trademarkWorkflowState?.refereeAudit?.decision;
                   const verifierVerdict = auditV2?.verifierResult?.verdict;
-                  const brandHits = hitsList.filter((h: any) =>
+
+                  const getFieldData = (field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description') => {
+                    if (singleFieldResults[field]) return singleFieldResults[field];
+                    const existing = fieldSummaries[field];
+                    if (existing && (existing.totalHits !== undefined || existing.hits || existing.detectedTrademarks)) {
+                      return existing;
+                    }
+                    const fieldHits = hitsList.filter((h: any) => h.field === field);
+                    if (fieldHits.length > 0) {
+                      return {
+                        totalHits: fieldHits.length,
+                        hasInfringementClass25: fieldHits.some((h: any) => (h.classes || []).includes(25)),
+                        hits: fieldHits
+                      };
+                    }
+                    return existing || null;
+                  };
+
+                  const brandData = getFieldData('brand');
+                  const brandHits = brandData?.hits || hitsList.filter((h: any) =>
                     h.sourceRole === 'BRAND' || h.field === 'brand'
                   );
-                  const brandHasK25 = brandHits.some((h: any) =>
-                    (h.classes || []).includes(25) || h.classNumber === '25'
+                  const brandHasK25 = Boolean(
+                    brandData?.hasInfringementClass25 ||
+                    (Array.isArray(brandHits) && brandHits.some((h: any) =>
+                      (h.classes || []).includes(25) || h.classNumber === '25'
+                    ))
                   );
 
                   return (
@@ -2142,7 +2211,7 @@ export const TasksView: React.FC = () => {
                           </div>
                           <button
                             onClick={handleTmRecheck}
-                            disabled={isCheckingTm || isSubmitting}
+                            disabled={isCheckingTm || isSubmitting || checkingField !== null}
                             className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center space-x-1.5 transition-colors disabled:opacity-50 shadow-sm shrink-0"
                           >
                             <Search className={`w-3.5 h-3.5 ${isCheckingTm ? 'animate-spin' : ''}`} />
@@ -2226,9 +2295,21 @@ export const TasksView: React.FC = () => {
                         <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="font-semibold text-slate-300 uppercase tracking-wider">Brand Name (40–50 Zeichen)</span>
-                            <span className={`font-mono text-[10px] font-bold ${editableListing.brand.length > 50 ? 'text-rose-400' : 'text-slate-400'}`}>
-                              {editableListing.brand.length}/50
-                            </span>
+                            <div className="flex items-center space-x-2">
+                              <span className={`font-mono text-[10px] font-bold ${editableListing.brand.length > 50 ? 'text-rose-400' : 'text-slate-400'}`}>
+                                {editableListing.brand.length}/50
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCheckSingleField('brand', editableListing.brand)}
+                                disabled={checkingField !== null || isCheckingTm || !editableListing.brand.trim()}
+                                className="px-2.5 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                title="Nur Brand Name bei USPTO prüfen"
+                              >
+                                <Search className={`w-3 h-3 ${checkingField === 'brand' ? 'animate-spin' : ''}`} />
+                                <span>{checkingField === 'brand' ? 'Prüfe...' : 'USPTO prüfen'}</span>
+                              </button>
+                            </div>
                           </div>
                           <input
                             type="text"
@@ -2237,7 +2318,7 @@ export const TasksView: React.FC = () => {
                             className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
                             placeholder="Brand Name eingeben..."
                           />
-                          <FieldTmWordChips label="Brand" fieldData={fieldSummaries.brand} />
+                          <FieldTmWordChips label="Brand" fieldData={getFieldData('brand')} />
                           {brandHits.length > 0 && (
                             <div className="p-2.5 rounded-lg bg-rose-950/30 border border-rose-500/40 text-[11px] text-rose-200 flex items-start gap-2 mt-1.5">
                               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
@@ -2257,9 +2338,21 @@ export const TasksView: React.FC = () => {
                         <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="font-semibold text-slate-300 uppercase tracking-wider">Design Title (50–60 Zeichen, locked Subniche Suffix)</span>
-                            <span className={`font-mono text-[10px] font-bold ${editableListing.title.length > 60 ? 'text-rose-400' : 'text-slate-400'}`}>
-                              {editableListing.title.length}/60
-                            </span>
+                            <div className="flex items-center space-x-2">
+                              <span className={`font-mono text-[10px] font-bold ${editableListing.title.length > 60 ? 'text-rose-400' : 'text-slate-400'}`}>
+                                {editableListing.title.length}/60
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCheckSingleField('title', editableListing.title)}
+                                disabled={checkingField !== null || isCheckingTm || !editableListing.title.trim()}
+                                className="px-2.5 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                title="Nur Design Title bei USPTO prüfen"
+                              >
+                                <Search className={`w-3 h-3 ${checkingField === 'title' ? 'animate-spin' : ''}`} />
+                                <span>{checkingField === 'title' ? 'Prüfe...' : 'USPTO prüfen'}</span>
+                              </button>
+                            </div>
                           </div>
                           <input
                             type="text"
@@ -2268,16 +2361,28 @@ export const TasksView: React.FC = () => {
                             className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-purple-300 font-semibold focus:outline-none focus:border-purple-500"
                             placeholder="Design Title eingeben..."
                           />
-                          <FieldTmWordChips label="Title" fieldData={fieldSummaries.title} />
+                          <FieldTmWordChips label="Title" fieldData={getFieldData('title')} />
                         </div>
 
                         {/* Bullet 1 */}
                         <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="font-semibold text-slate-300 uppercase tracking-wider">Feature Bullet 1 (230–256 Zeichen)</span>
-                            <span className={`font-mono text-[10px] font-bold ${editableListing.bullet1.length > 256 ? 'text-rose-400' : 'text-slate-400'}`}>
-                              {editableListing.bullet1.length}/256
-                            </span>
+                            <div className="flex items-center space-x-2">
+                              <span className={`font-mono text-[10px] font-bold ${editableListing.bullet1.length > 256 ? 'text-rose-400' : 'text-slate-400'}`}>
+                                {editableListing.bullet1.length}/256
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCheckSingleField('bullet1', editableListing.bullet1)}
+                                disabled={checkingField !== null || isCheckingTm || !editableListing.bullet1.trim()}
+                                className="px-2.5 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                title="Nur Feature Bullet 1 bei USPTO prüfen"
+                              >
+                                <Search className={`w-3 h-3 ${checkingField === 'bullet1' ? 'animate-spin' : ''}`} />
+                                <span>{checkingField === 'bullet1' ? 'Prüfe...' : 'USPTO prüfen'}</span>
+                              </button>
+                            </div>
                           </div>
                           <textarea
                             value={editableListing.bullet1}
@@ -2286,16 +2391,28 @@ export const TasksView: React.FC = () => {
                             className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[140px]"
                             placeholder="Feature Bullet 1 eingeben..."
                           />
-                          <FieldTmWordChips label="Bullet 1" fieldData={fieldSummaries.bullet1} />
+                          <FieldTmWordChips label="Bullet 1" fieldData={getFieldData('bullet1')} />
                         </div>
 
                         {/* Bullet 2 */}
                         <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="font-semibold text-slate-300 uppercase tracking-wider">Feature Bullet 2 (230–256 Zeichen)</span>
-                            <span className={`font-mono text-[10px] font-bold ${editableListing.bullet2.length > 256 ? 'text-rose-400' : 'text-slate-400'}`}>
-                              {editableListing.bullet2.length}/256
-                            </span>
+                            <div className="flex items-center space-x-2">
+                              <span className={`font-mono text-[10px] font-bold ${editableListing.bullet2.length > 256 ? 'text-rose-400' : 'text-slate-400'}`}>
+                                {editableListing.bullet2.length}/256
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCheckSingleField('bullet2', editableListing.bullet2)}
+                                disabled={checkingField !== null || isCheckingTm || !editableListing.bullet2.trim()}
+                                className="px-2.5 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                title="Nur Feature Bullet 2 bei USPTO prüfen"
+                              >
+                                <Search className={`w-3 h-3 ${checkingField === 'bullet2' ? 'animate-spin' : ''}`} />
+                                <span>{checkingField === 'bullet2' ? 'Prüfe...' : 'USPTO prüfen'}</span>
+                              </button>
+                            </div>
                           </div>
                           <textarea
                             value={editableListing.bullet2}
@@ -2304,16 +2421,28 @@ export const TasksView: React.FC = () => {
                             className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[140px]"
                             placeholder="Feature Bullet 2 eingeben..."
                           />
-                          <FieldTmWordChips label="Bullet 2" fieldData={fieldSummaries.bullet2} />
+                          <FieldTmWordChips label="Bullet 2" fieldData={getFieldData('bullet2')} />
                         </div>
 
                         {/* Product Description */}
                         <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="font-semibold text-slate-300 uppercase tracking-wider">Product Description (300–600 Zeichen)</span>
-                            <span className={`font-mono text-[10px] font-bold ${editableListing.description.length > 2000 ? 'text-rose-400' : 'text-slate-400'}`}>
-                              {editableListing.description.length}/2000
-                            </span>
+                            <div className="flex items-center space-x-2">
+                              <span className={`font-mono text-[10px] font-bold ${editableListing.description.length > 2000 ? 'text-rose-400' : 'text-slate-400'}`}>
+                                {editableListing.description.length}/2000
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCheckSingleField('description', editableListing.description)}
+                                disabled={checkingField !== null || isCheckingTm || !editableListing.description.trim()}
+                                className="px-2.5 py-1 rounded-md text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 flex items-center space-x-1 transition-all disabled:opacity-40 shrink-0"
+                                title="Nur Product Description bei USPTO prüfen"
+                              >
+                                <Search className={`w-3 h-3 ${checkingField === 'description' ? 'animate-spin' : ''}`} />
+                                <span>{checkingField === 'description' ? 'Prüfe...' : 'USPTO prüfen'}</span>
+                              </button>
+                            </div>
                           </div>
                           <textarea
                             value={editableListing.description}
@@ -2322,7 +2451,7 @@ export const TasksView: React.FC = () => {
                             placeholder="Produktbeschreibung eingeben..."
                             className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500 leading-relaxed min-h-[200px]"
                           />
-                          <FieldTmWordChips label="Description" fieldData={fieldSummaries.description} />
+                          <FieldTmWordChips label="Description" fieldData={getFieldData('description')} />
                         </div>
                       </div>
 

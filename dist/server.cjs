@@ -234920,6 +234920,23 @@ Beantworte die Analysefragen streng als JSON!`;
         throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
       }
       /**
+       * Checkpoint 3: Check single listing field against USPTO live (fast, no LLM)
+       */
+      static async checkSingleFieldTm(taskId, field, text2) {
+        const task = this.getTaskLogById(taskId);
+        if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+        const quote5 = task.payload?.quote || task.quote || "";
+        const lockedTitleTail = task.subniche || task.customAnswers?.subniche || task.niche1 || "";
+        const niceClasses = task.blockedNiceClasses ? [25].filter((c) => !task.blockedNiceClasses?.includes(c)) : [25];
+        return TrademarkService.scanSingleField({
+          field,
+          text: text2,
+          niceClasses: niceClasses.length > 0 ? niceClasses : [25],
+          quote: quote5,
+          lockedTitleTail
+        });
+      }
+      /**
        * Checkpoint 3: Submit Manual Trademark Review
        */
       static async submitTmReview(taskId, params2) {
@@ -236287,6 +236304,38 @@ var init_trademarkService = __esm2({
         if (field === "description") return listing.description || "";
         if (field === "quote") return quote5 || "";
         return "";
+      }
+      /**
+       * Fast, isolated USPTO scan for a single listing field (no LLM, 1-5 grams).
+       * Ideal for quick manual UI validation of individual fields in the TM review dialog.
+       */
+      static async scanSingleField(params2) {
+        const fieldListing = {
+          [params2.field]: params2.text || ""
+        };
+        const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
+          listing: fieldListing
+        });
+        const niceClasses = params2.niceClasses && params2.niceClasses.length > 0 ? params2.niceClasses : [25];
+        const queryResult = await this.queryUsptoBatch(terms, niceClasses);
+        const hits = this.normalizeAndClassifyMatches(
+          queryResult.hitsByTerm,
+          termToFieldsMap,
+          params2.quote,
+          params2.lockedTitleTail,
+          queryResult.integrity
+        );
+        const fieldHits = hits.filter((h) => h.field === params2.field);
+        const hasInfringementClass25 = fieldHits.some((h) => (h.classes || []).includes(25));
+        return {
+          field: params2.field,
+          text: params2.text,
+          termsScanned: terms.length,
+          totalHits: fieldHits.length,
+          hasInfringementClass25,
+          hits: fieldHits,
+          scanIntegrity: queryResult.integrity
+        };
       }
       /**
        * Compacts hundreds of raw/normalized hits into deduplicated mark entities.
@@ -241569,6 +241618,23 @@ app.post("/api/v1/tasks/:taskId/submit-design-review", async (req, res) => {
     res.status(400).json({ success: false, error: err.message });
   } finally {
     res.locals.releaseReview?.();
+  }
+});
+app.post("/api/v1/tasks/:taskId/check-field-tm", async (req, res) => {
+  const { taskId } = req.params;
+  const { field, text: text2 } = req.body;
+  try {
+    if (!field || typeof text2 !== "string") {
+      return res.status(400).json({ success: false, error: "Feld und Text sind erforderlich." });
+    }
+    const validFields = ["brand", "title", "bullet1", "bullet2", "description"];
+    if (!validFields.includes(field)) {
+      return res.status(400).json({ success: false, error: `Ung\xFCltiges Feld: ${field}` });
+    }
+    const result2 = await TaskLogService.checkSingleFieldTm(taskId, field, text2);
+    res.json({ success: true, ...result2 });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 app.post("/api/v1/tasks/:taskId/submit-tm-review", async (req, res) => {

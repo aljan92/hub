@@ -1204,6 +1204,60 @@ export class TrademarkService {
   }
 
   /**
+   * Fast, isolated USPTO scan for a single listing field (no LLM, 1-5 grams).
+   * Ideal for quick manual UI validation of individual fields in the TM review dialog.
+   */
+  static async scanSingleField(params: {
+    field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description';
+    text: string;
+    niceClasses?: number[];
+    quote?: string;
+    lockedTitleTail?: string;
+  }): Promise<{
+    field: string;
+    text: string;
+    termsScanned: number;
+    totalHits: number;
+    hasInfringementClass25: boolean;
+    hits: TrademarkHitV2[];
+    scanIntegrity: TrademarkScanIntegrity;
+  }> {
+    const fieldListing: Record<string, string> = {
+      [params.field]: params.text || ''
+    };
+
+    const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
+      listing: fieldListing
+    });
+
+    const niceClasses = params.niceClasses && params.niceClasses.length > 0
+      ? params.niceClasses
+      : [25];
+
+    const queryResult = await this.queryUsptoBatch(terms, niceClasses);
+    const hits = this.normalizeAndClassifyMatches(
+      queryResult.hitsByTerm,
+      termToFieldsMap,
+      params.quote,
+      params.lockedTitleTail,
+      queryResult.integrity
+    );
+
+    const fieldHits = hits.filter(h => h.field === params.field);
+    const hasInfringementClass25 = fieldHits.some(h => (h.classes || []).includes(25));
+
+    return {
+      field: params.field,
+      text: params.text,
+      termsScanned: terms.length,
+      totalHits: fieldHits.length,
+      hasInfringementClass25,
+      hits: fieldHits,
+      scanIntegrity: queryResult.integrity
+    };
+  }
+
+  /**
    * Compacts hundreds of raw/normalized hits into deduplicated mark entities.
    * Significantly reduces token payload by omitting full field text repetition
    * while preserving exact field locations and actual matched terms.

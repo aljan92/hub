@@ -2472,6 +2472,32 @@ export class TaskLogService {
   }
 
   /**
+   * Checkpoint 3: Check single listing field against USPTO live (fast, no LLM)
+   */
+  static async checkSingleFieldTm(
+    taskId: string,
+    field: 'brand' | 'title' | 'bullet1' | 'bullet2' | 'description',
+    text: string
+  ) {
+    const task = this.getTaskLogById(taskId);
+    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
+
+    const quote = task.payload?.quote || task.quote || '';
+    const lockedTitleTail = task.subniche || task.customAnswers?.subniche || task.niche1 || '';
+    const niceClasses = task.blockedNiceClasses
+      ? [25].filter(c => !task.blockedNiceClasses?.includes(c))
+      : [25];
+
+    return TrademarkService.scanSingleField({
+      field,
+      text,
+      niceClasses: niceClasses.length > 0 ? niceClasses : [25],
+      quote,
+      lockedTitleTail
+    });
+  }
+
+  /**
    * Checkpoint 3: Submit Manual Trademark Review
    */
   static async submitTmReview(taskId: string, params: {

@@ -1368,6 +1368,24 @@ app.post('/api/v1/tasks/:taskId/submit-design-review', async (req, res) => {
   }
 });
 
+app.post('/api/v1/tasks/:taskId/check-field-tm', async (req, res) => {
+  const { taskId } = req.params;
+  const { field, text } = req.body;
+  try {
+    if (!field || typeof text !== 'string') {
+      return res.status(400).json({ success: false, error: 'Feld und Text sind erforderlich.' });
+    }
+    const validFields = ['brand', 'title', 'bullet1', 'bullet2', 'description'];
+    if (!validFields.includes(field)) {
+      return res.status(400).json({ success: false, error: `Ungültiges Feld: ${field}` });
+    }
+    const result = await TaskLogService.checkSingleFieldTm(taskId, field as any, text);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/v1/tasks/:taskId/submit-tm-review', async (req, res) => {
   const { taskId } = req.params;
   const { action, refinedListing } = req.body;
