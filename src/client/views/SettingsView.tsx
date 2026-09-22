@@ -82,7 +82,7 @@ export const SettingsView: React.FC = () => {
   const [gptImageBackground, setGptImageBackground] = useState<'auto' | 'opaque' | 'transparent'>(initialSettings.gptImageBackground || 'transparent');
   const [gptImage25Quality, setGptImage25Quality] = useState<'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>(initialSettings.gptImage25Quality || 'high');
   const [gptImage25AspectRatio, setGptImage25AspectRatio] = useState<string>(initialSettings.gptImage25AspectRatio || '3:4');
-  const [gptImage25Background, setGptImage25Background] = useState<'auto' | 'opaque' | 'transparent'>(initialSettings.gptImage25Background || 'transparent');
+  const [gptImage25Background, setGptImage25Background] = useState<'auto' | 'opaque' | 'transparent' | 'deep_blue'>(initialSettings.gptImage25Background || 'transparent');
   const [availableIdeogramModels, setAvailableIdeogramModels] = useState<{ id: string; name: string }[]>([
     { id: 'V_3', name: 'Ideogram 3.0 (T-Shirt & Vektor Spezialist)' },
     { id: 'V_4', name: 'Ideogram 4.0 (Neueste Generation & Transparent)' },
@@ -1059,7 +1059,8 @@ export const SettingsView: React.FC = () => {
                   <label className="block text-[11px] font-semibold text-slate-400 mb-1">Background</label>
                   <select value={gptImage25Background} onChange={(e) => setGptImage25Background(e.target.value as any)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none font-mono">
                     <option value="transparent">TRANSPARENT (NATIV FREIGESTELLT)</option>
-                    <option value="opaque">OPAQUE</option>
+                    <option value="deep_blue">FREISTELLUNG (DEEP BLUE CHROMA-KEY)</option>
+                    <option value="opaque">OPAQUE (DECKEND)</option>
                     <option value="auto">AUTO</option>
                   </select>
                 </div>
@@ -1068,6 +1069,11 @@ export const SettingsView: React.FC = () => {
               {gptImage25Background === 'transparent' && (
                 <div className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3">
                   ✨ <strong>GPT Image 2.5 Sunburst</strong> unterstützt echte native Transparenz. Der Parameter <span className="font-mono">background: transparent</span> wird direkt an OpenRouter übergeben und erzeugt ein sauberes, freigestelltes PNG.
+                </div>
+              )}
+              {gptImage25Background === 'deep_blue' && (
+                <div className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3">
+                  🎨 <strong>Deep Blue Chroma-Key Modus:</strong> 1:1 identischer Ablauf wie bei GPT Image 2.0. Erzeugt einen homogenen dunkelblauen Hintergrund mit striktem Anti-Schachbrett-Verbot. Technisch wird kompatibel <span className="font-mono">background: opaque</span> gesendet und im Hub über die Ecken-Erkennung ausgestanzt.
                 </div>
               )}
             </>

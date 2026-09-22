@@ -54935,7 +54935,8 @@ var init_llmService = __esm2({
         const effectiveGptModel = gptModel || currentSettings.gptImageModel || "openai/gpt-image-2.5-sunburst";
         const isGpt25 = imageProvider === "GPT_IMAGE_2" && effectiveGptModel === "openai/gpt-image-2.5-sunburst";
         const providerName = imageProvider === "GPT_IMAGE_2" ? isGpt25 ? "OpenAI GPT Image 2.5 Sunburst" : "OpenAI GPT Image 2" : imageProvider === "IDEOGRAM_V4" ? "Ideogram 4.0" : "Ideogram 3.0";
-        const backgroundInstruction = background === "transparent" && imageProvider === "GPT_IMAGE_2" && !isGpt25 ? "Request a perfectly uniform, flat, solid deep blue chroma-key background behind the isolated artwork. Reserve deep blue exclusively for that removable background: never use it in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decoration. Do not request transparency and do not draw a checkerboard or transparency-grid pattern." : background === "transparent" ? "Request a genuinely transparent background with an isolated design and no mockup, shirt, person, scene, shadow, or background texture." : background === "auto" ? "Keep the design isolated with no mockup, shirt, person, or realistic scene; allow the image provider to choose the background treatment." : "Request an isolated design on a clean, flat, solid contrasting background with no mockup, shirt, person, or realistic scene.";
+        const isDeepBlue = background === "deep_blue" || background === "transparent" && imageProvider === "GPT_IMAGE_2" && !isGpt25;
+        const backgroundInstruction = isDeepBlue ? "Request a perfectly uniform, flat, solid deep blue chroma-key background behind the isolated artwork. Reserve deep blue exclusively for that removable background: never use it in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decoration. Do not request transparency and do not draw a checkerboard or transparency-grid pattern." : background === "transparent" ? "Request a genuinely transparent background with an isolated design and no mockup, shirt, person, scene, shadow, checkerboard pattern, or background texture." : background === "auto" ? "Keep the design isolated with no mockup, shirt, person, or realistic scene; allow the image provider to choose the background treatment." : "Request an isolated design on a clean, flat, solid contrasting background with no mockup, shirt, person, or realistic scene.";
         const systemPrompt = `You are an expert prompt engineer specializing in ${providerName} T-shirt graphics for Merch by Amazon.
 Your goal is to craft a highly descriptive, visually stunning, clean vector prompt that produces high-converting apparel designs.
 Requirements:
@@ -56747,7 +56748,7 @@ var init_openRouterImageService = __esm2({
       static TIMEOUT_MS = 18e4;
       static buildRequestBody(options2) {
         const model = options2.model || this.MODEL;
-        const transportBackground = model === this.MODEL_V25 ? options2.background : options2.background === "transparent" ? "opaque" : options2.background;
+        const transportBackground = options2.background === "deep_blue" ? "opaque" : model === this.MODEL_V25 ? options2.background : options2.background === "transparent" ? "opaque" : options2.background;
         const requestBody = {
           model,
           prompt: options2.prompt,
@@ -233477,13 +233478,18 @@ var init_taskLogService = __esm2({
           return;
         }
         const imageGeneration = task.imageGeneration;
-        const isGptImage = imageGeneration?.provider === "GPT_IMAGE_2";
         const isGptImage25 = isGptImage && imageGeneration?.model === "openai/gpt-image-2.5-sunburst";
-        const providerDirective = isGptImage25 ? `
+        const bgMode = imageGeneration?.background || (isGptImage25 ? "transparent" : "deep_blue");
+        const chromaKeyDirective = (modelName) => `
 
-CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: ${imageGeneration?.background || "transparent"}. ${imageGeneration?.background === "transparent" ? "Ensure the artwork is completely isolated with a clean transparent background. Do not generate background scenery, frames, product mockups, or extra solid backdrops." : "Keep the artwork isolated and free of product mockups or scenes."}` : isGptImage ? `
+CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): ${modelName}. Create a prompt specifically for ${modelName}. Background mode: ${bgMode}. Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement.`;
+        const providerDirective = isGptImage25 ? bgMode === "deep_blue" ? chromaKeyDirective("OpenAI GPT Image 2.5 Sunburst") : bgMode === "transparent" ? `
 
-CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration?.background || "transparent"}. ${imageGeneration?.background === "transparent" ? "Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement." : "Keep the artwork isolated and free of product mockups or scenes."}` : imageGeneration?.provider === "IDEOGRAM_V4" ? "\n\nCURRENT IMAGE PROVIDER: Ideogram 4.0. Preserve the established Ideogram-compatible prompt style tailored for high detail, typography accuracy and photorealistic or illustrative graphics." : "\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.";
+CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: transparent. Ensure the artwork is completely isolated with a clean transparent background. Do not generate background scenery, frames, product mockups, checkerboard patterns, or extra solid backdrops.` : `
+
+CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: opaque. Keep the artwork isolated and free of product mockups or scenes.` : isGptImage ? bgMode === "opaque" ? `
+
+CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: opaque. Keep the artwork isolated and free of product mockups or scenes.` : chromaKeyDirective("OpenAI GPT Image 2") : imageGeneration?.provider === "IDEOGRAM_V4" ? "\n\nCURRENT IMAGE PROVIDER: Ideogram 4.0. Preserve the established Ideogram-compatible prompt style tailored for high detail, typography accuracy and photorealistic or illustrative graphics." : "\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.";
         const systemPrompt = SystemPromptService.getPromptGeneratorPrompt() + providerDirective;
         const referenceSection = task.promptPool?.enabled ? PromptPoolService.buildReferenceSection(task.promptPool.selectedReferences) : "";
         const userMessage = `Input:
@@ -233658,15 +233664,15 @@ ${referenceSection}` : ""}`;
           magicPrompt: settings.ideogramMagicPromptOption || "AUTO"
         };
         const prompt = promptText || task.resultPrompt || task.payload?.prompt || task.payload?.quote || "";
-        const isGptImage = snapshot3.provider === "GPT_IMAGE_2";
+        const isGptImage2 = snapshot3.provider === "GPT_IMAGE_2";
         const isIdeogramV4 = snapshot3.provider === "IDEOGRAM_V4";
-        const isGptImage25 = isGptImage && snapshot3.model === "openai/gpt-image-2.5-sunburst";
-        const providerLabel = isGptImage25 ? "GPT Image 2.5 Sunburst" : isGptImage ? "GPT Image 2" : isIdeogramV4 ? "Ideogram 4.0" : "Ideogram";
-        const model = snapshot3.model || (isIdeogramV4 ? IdeogramV4Service.MODEL : isGptImage ? settings.gptImageModel || OpenRouterImageService.MODEL_V25 : "V_3");
+        const isGptImage25 = isGptImage2 && snapshot3.model === "openai/gpt-image-2.5-sunburst";
+        const providerLabel = isGptImage25 ? "GPT Image 2.5 Sunburst" : isGptImage2 ? "GPT Image 2" : isIdeogramV4 ? "Ideogram 4.0" : "Ideogram";
+        const model = snapshot3.model || (isIdeogramV4 ? IdeogramV4Service.MODEL : isGptImage2 ? settings.gptImageModel || OpenRouterImageService.MODEL_V25 : "V_3");
         this.updateTaskStatus(taskId, { status: "GENERATING_IMAGE" });
         const ideogramKey = isIdeogramV4 ? IdeogramV4Service.getApiKey() : settings.ideogramApiKey;
-        if (isGptImage && !settings.openRouterApiKey || !isGptImage && !ideogramKey) {
-          const missingKey = isGptImage ? "OpenRouter API Key" : "Ideogram API Key";
+        if (isGptImage2 && !settings.openRouterApiKey || !isGptImage2 && !ideogramKey) {
+          const missingKey = isGptImage2 ? "OpenRouter API Key" : "Ideogram API Key";
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
             type: "ERROR",
@@ -233708,7 +233714,7 @@ ${referenceSection}` : ""}`;
           const localFilePath = import_path84.default.join(designsDir, `${cleanId}.png`);
           const localUrl = `/api/v1/designs/image/${encodeURIComponent(taskId)}`;
           let sourceUrl = localUrl;
-          if (isGptImage) {
+          if (isGptImage2) {
             const result2 = await OpenRouterImageService.generateImage({
               model,
               prompt,
@@ -233774,7 +233780,7 @@ ${referenceSection}` : ""}`;
         } catch (err) {
           const latencyMs = Date.now() - start3;
           const errorMsg = err.message || `Fehler bei der ${providerLabel} Bildgenerierung`;
-          if (isGptImage && (err?.status === 402 || err?.status === 403)) {
+          if (isGptImage2 && (err?.status === 402 || err?.status === 403)) {
             LLMService.tripCircuitBreaker(errorMsg);
           }
           this.addEvent(taskId, {

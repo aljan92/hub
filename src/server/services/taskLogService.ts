@@ -548,12 +548,20 @@ export class TaskLogService {
 
     // 2. Prepare System Prompt & User Message
     const imageGeneration = task.imageGeneration;
-    const isGptImage = imageGeneration?.provider === 'GPT_IMAGE_2';
     const isGptImage25 = isGptImage && imageGeneration?.model === 'openai/gpt-image-2.5-sunburst';
+    const bgMode = imageGeneration?.background || (isGptImage25 ? 'transparent' : 'deep_blue');
+    const chromaKeyDirective = (modelName: string) => `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): ${modelName}. Create a prompt specifically for ${modelName}. Background mode: ${bgMode}. Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement.`;
+
     const providerDirective = isGptImage25
-      ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: ${imageGeneration?.background || 'transparent'}. ${imageGeneration?.background === 'transparent' ? 'Ensure the artwork is completely isolated with a clean transparent background. Do not generate background scenery, frames, product mockups, or extra solid backdrops.' : 'Keep the artwork isolated and free of product mockups or scenes.'}`
+      ? (bgMode === 'deep_blue'
+          ? chromaKeyDirective('OpenAI GPT Image 2.5 Sunburst')
+          : bgMode === 'transparent'
+          ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: transparent. Ensure the artwork is completely isolated with a clean transparent background. Do not generate background scenery, frames, product mockups, checkerboard patterns, or extra solid backdrops.`
+          : `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: opaque. Keep the artwork isolated and free of product mockups or scenes.`)
       : isGptImage
-      ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: ${imageGeneration?.background || 'transparent'}. ${imageGeneration?.background === 'transparent' ? 'Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement.' : 'Keep the artwork isolated and free of product mockups or scenes.'}`
+      ? (bgMode === 'opaque'
+          ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: opaque. Keep the artwork isolated and free of product mockups or scenes.`
+          : chromaKeyDirective('OpenAI GPT Image 2'))
       : imageGeneration?.provider === 'IDEOGRAM_V4'
       ? '\n\nCURRENT IMAGE PROVIDER: Ideogram 4.0. Preserve the established Ideogram-compatible prompt style tailored for high detail, typography accuracy and photorealistic or illustrative graphics.'
       : '\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.';

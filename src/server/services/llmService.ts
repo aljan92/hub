@@ -491,7 +491,7 @@ export class LLMService {
     quote: string,
     stylePreset: string,
     imageProvider: 'IDEOGRAM' | 'IDEOGRAM_V4' | 'GPT_IMAGE_2' = 'IDEOGRAM',
-    background: 'auto' | 'opaque' | 'transparent' = 'opaque',
+    background: 'auto' | 'opaque' | 'transparent' | 'deep_blue' = 'opaque',
     gptModel?: string
   ): Promise<string> {
     const { url, headers, model } = this.getBaseUrlAndHeaders();
@@ -502,10 +502,11 @@ export class LLMService {
     const providerName = imageProvider === 'GPT_IMAGE_2'
       ? (isGpt25 ? 'OpenAI GPT Image 2.5 Sunburst' : 'OpenAI GPT Image 2')
       : (imageProvider === 'IDEOGRAM_V4' ? 'Ideogram 4.0' : 'Ideogram 3.0');
-    const backgroundInstruction = background === 'transparent' && imageProvider === 'GPT_IMAGE_2' && !isGpt25
+    const isDeepBlue = background === 'deep_blue' || (background === 'transparent' && imageProvider === 'GPT_IMAGE_2' && !isGpt25);
+    const backgroundInstruction = isDeepBlue
       ? 'Request a perfectly uniform, flat, solid deep blue chroma-key background behind the isolated artwork. Reserve deep blue exclusively for that removable background: never use it in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decoration. Do not request transparency and do not draw a checkerboard or transparency-grid pattern.'
       : background === 'transparent'
-      ? 'Request a genuinely transparent background with an isolated design and no mockup, shirt, person, scene, shadow, or background texture.'
+      ? 'Request a genuinely transparent background with an isolated design and no mockup, shirt, person, scene, shadow, checkerboard pattern, or background texture.'
       : background === 'auto'
         ? 'Keep the design isolated with no mockup, shirt, person, or realistic scene; allow the image provider to choose the background treatment.'
         : 'Request an isolated design on a clean, flat, solid contrasting background with no mockup, shirt, person, or realistic scene.';

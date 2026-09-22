@@ -327,9 +327,16 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
 
   const gptModel = providerSettings.gptImageModel || 'openai/gpt-image-2.5-sunburst';
   const isGpt25 = gptModel === 'openai/gpt-image-2.5-sunburst';
+  const gpt25Bg = providerSettings.gptImage25Background || providerSettings.gptImageBackground || 'transparent';
+  const gpt25BgLabel = gpt25Bg === 'deep_blue'
+    ? 'FREISTELLUNG (DEEP BLUE)'
+    : gpt25Bg === 'transparent'
+    ? 'TRANSPARENT (NATIV)'
+    : String(gpt25Bg).toUpperCase();
+
   const gptEffectiveSettings = isGpt25
-    ? `2.5 Sunburst · ${String(providerSettings.gptImage25Quality || providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImage25AspectRatio || providerSettings.gptImageAspectRatio || '3:4'} · ${(providerSettings.gptImage25Background || providerSettings.gptImageBackground) === 'transparent' ? 'TRANSPARENT (NATIV)' : String(providerSettings.gptImage25Background || providerSettings.gptImageBackground || 'opaque').toUpperCase()}`
-    : `2.0 · ${String(providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImageAspectRatio || '3:4'} · ${providerSettings.gptImageBackground === 'transparent' ? 'FREISTELLUNG (DEEP BLUE)' : String(providerSettings.gptImageBackground || 'opaque').toUpperCase()}`;
+    ? `2.5 Sunburst · ${String(providerSettings.gptImage25Quality || providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImage25AspectRatio || providerSettings.gptImageAspectRatio || '3:4'} · ${gpt25BgLabel}`
+    : `2.0 · ${String(providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImageAspectRatio || '3:4'} · ${providerSettings.gptImageBackground === 'transparent' || providerSettings.gptImageBackground === 'deep_blue' ? 'FREISTELLUNG (DEEP BLUE)' : String(providerSettings.gptImageBackground || 'opaque').toUpperCase()}`;
 
   const effectiveSettings = imageProvider === 'GPT_IMAGE_2'
     ? gptEffectiveSettings

@@ -13,7 +13,7 @@ export interface ImageGenerationSnapshot {
   style?: string;
   magicPrompt?: string | boolean;
   quality?: 'auto' | 'low' | 'medium' | 'high';
-  background?: 'auto' | 'opaque' | 'transparent';
+  background?: 'auto' | 'opaque' | 'transparent' | 'deep_blue';
   transparent?: boolean;
   outputResolution?: string;
 }

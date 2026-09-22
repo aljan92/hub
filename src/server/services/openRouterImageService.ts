@@ -5,7 +5,7 @@ export interface OpenRouterImageOptions {
   prompt: string;
   quality: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   aspectRatio: string;
-  background: 'auto' | 'opaque' | 'transparent';
+  background: 'auto' | 'opaque' | 'transparent' | 'deep_blue';
 }
 
 export interface OpenRouterImageResult {
@@ -22,8 +22,11 @@ export class OpenRouterImageService {
   static buildRequestBody(options: OpenRouterImageOptions): Record<string, unknown> {
     const model = options.model || this.MODEL;
     // GPT Image 2.5 Sunburst supports native transparent background over OpenRouter.
+    // When deep_blue (Chroma-Key) is requested, transport 'opaque' to ensure uniform solid background.
     // GPT Image 2.0 rejects transparent on OpenRouter, requiring opaque transport with Chroma-Key.
-    const transportBackground = (model === this.MODEL_V25)
+    const transportBackground = (options.background === 'deep_blue')
+      ? 'opaque'
+      : (model === this.MODEL_V25)
       ? options.background
       : (options.background === 'transparent' ? 'opaque' : options.background);
 

@@ -30,7 +30,7 @@ export interface AppSettings {
   gptImageBackground: 'auto' | 'opaque' | 'transparent';
   gptImage25Quality: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   gptImage25AspectRatio: string;
-  gptImage25Background: 'auto' | 'opaque' | 'transparent';
+  gptImage25Background: 'auto' | 'opaque' | 'transparent' | 'deep_blue';
   designerImageProvider: 'IDEOGRAM' | 'IDEOGRAM_V4' | 'GPT_IMAGE_2';
   designerPromptPoolEnabled: boolean;
   vectorizerApiKey: string;
@@ -100,7 +100,7 @@ export function getEffectiveGptImageSettings(settings: Partial<AppSettings>): {
   model: 'openai/gpt-image-2' | 'openai/gpt-image-2.5-sunburst';
   quality: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   aspectRatio: string;
-  background: 'auto' | 'opaque' | 'transparent';
+  background: 'auto' | 'opaque' | 'transparent' | 'deep_blue';
 } {
   const model = settings.gptImageModel === 'openai/gpt-image-2' ? 'openai/gpt-image-2' : 'openai/gpt-image-2.5-sunburst';
   if (model === 'openai/gpt-image-2.5-sunburst') {
