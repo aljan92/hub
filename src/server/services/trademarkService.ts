@@ -1266,15 +1266,19 @@ export class TrademarkService {
     listing: EnglishListing;
     quote?: string;
     additionalProductIds?: string[];
+    niche1?: string;
+    niche2?: string;
+    subniche?: string;
   }): Promise<{
     scanIntegrity: TrademarkScanIntegrity;
     hits: TrademarkHitV2[];
     finalListing: EnglishListing;
   }> {
     const productScope = TrademarkPolicyService.resolveProductScope(params.additionalProductIds);
-    const lockedTitleTail = params.listing.title
-      ? TrademarkPolicyService.extractLockedTitleTail(params.listing.title)
-      : undefined;
+    const normN1 = ListingValidationService.normalizeOptionalText(params.niche1);
+    const normN2 = ListingValidationService.normalizeOptionalText(params.niche2);
+    const normSub = ListingValidationService.normalizeOptionalText(params.subniche);
+    const lockedTitleTail = ListingValidationService.resolveExpectedTitleSuffix({ niche1: normN1, niche2: normN2, subniche: normSub });
 
     const { terms, termToFieldsMap } = this.extractTermsFromTextV2({
       listing: params.listing,

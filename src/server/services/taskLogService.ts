@@ -2692,7 +2692,10 @@ export class TaskLogService {
           const scanResult = await TrademarkService.scanFullListingTermsOnly({
             listing: listingToApprove,
             quote: task.payload?.quote || '',
-            additionalProductIds
+            additionalProductIds,
+            niche1: task.niche1 || task.customAnswers?.niche1 || task.payload?.niche1 || '',
+            niche2: task.niche2 || task.customAnswers?.niche2 || task.payload?.niche2 || '',
+            subniche: task.subniche || task.customAnswers?.subniche || task.payload?.subniche || ''
           });
           scanIntegrity = scanResult.scanIntegrity;
           finalHits = scanResult.hits;
