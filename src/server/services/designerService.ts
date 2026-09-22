@@ -7,16 +7,25 @@ const DESIGN_FIELDS = ['niche1', 'niche2', 'subniche', 'quote', 'style'] as cons
 const SUGGESTION_FIELDS = new Set<string>(DESIGN_FIELDS);
 const recentCreations = new Map<string, { createdAt: number; task: any }>();
 
-export type DesignerValues = Record<(typeof DESIGN_FIELDS)[number], string>;
+export type DesignerValues = Record<(typeof DESIGN_FIELDS)[number], string> & {
+  customInstruction: string;
+};
 
 export class DesignerService {
   static normalizeValues(input: Record<string, unknown>): DesignerValues {
     const values = Object.fromEntries(DESIGN_FIELDS.map(field => [
       field,
       typeof input?.[field] === 'string' ? input[field].trim().replace(/\s+/g, ' ').slice(0, 300) : ''
-    ])) as DesignerValues;
+    ])) as Record<(typeof DESIGN_FIELDS)[number], string>;
     if (!values.niche1) throw new Error('Niche 1 ist erforderlich.');
-    return values;
+    const rawInstruction = input?.customInstruction ?? input?.custominstruction ?? input?.['custom instruction'];
+    const customInstruction = typeof rawInstruction === 'string'
+      ? rawInstruction.trim().slice(0, 1000)
+      : '';
+    return {
+      ...values,
+      customInstruction
+    };
   }
 
   static normalizeSuggestionRequest(input: Record<string, unknown>) {

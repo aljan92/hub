@@ -9,6 +9,7 @@ export interface DesignerConcept {
   subniche?: string;
   quote: string;
   style?: string;
+  customInstruction?: string;
   reasoning?: string;
 }
 

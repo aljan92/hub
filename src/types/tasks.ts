@@ -166,6 +166,7 @@ export interface DesignTaskLog {
   niche1?: string;
   niche2?: string;
   subniche?: string;
+  customInstruction?: string;
   hermesKeywords?: string[];
   keywords?: string[];
   blockedProducts?: string[];

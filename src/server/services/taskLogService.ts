@@ -223,6 +223,7 @@ export class TaskLogService {
       niche1: params.payload?.niche1 || params.payload?.niche || undefined,
       niche2: params.payload?.niche2 || undefined,
       subniche: params.payload?.subniche || undefined,
+      customInstruction: params.payload?.customInstruction || params.payload?.custominstruction || params.payload?.['custom instruction'] || undefined,
       keywords: params.payload?.keywords || undefined,
       hermesKeywords: params.payload?.hermesKeywords || (Array.isArray(params.payload?.keywords) ? params.payload.keywords : undefined),
       payload: params.payload || {},

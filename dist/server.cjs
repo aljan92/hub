@@ -233169,6 +233169,7 @@ var init_taskLogService = __esm2({
           niche1: params2.payload?.niche1 || params2.payload?.niche || void 0,
           niche2: params2.payload?.niche2 || void 0,
           subniche: params2.payload?.subniche || void 0,
+          customInstruction: params2.payload?.customInstruction || params2.payload?.custominstruction || params2.payload?.["custom instruction"] || void 0,
           keywords: params2.payload?.keywords || void 0,
           hermesKeywords: params2.payload?.hermesKeywords || (Array.isArray(params2.payload?.keywords) ? params2.payload.keywords : void 0),
           payload: params2.payload || {},
@@ -240433,7 +240434,12 @@ var DesignerService = class {
       typeof input?.[field] === "string" ? input[field].trim().replace(/\s+/g, " ").slice(0, 300) : ""
     ]));
     if (!values.niche1) throw new Error("Niche 1 ist erforderlich.");
-    return values;
+    const rawInstruction = input?.customInstruction ?? input?.custominstruction ?? input?.["custom instruction"];
+    const customInstruction = typeof rawInstruction === "string" ? rawInstruction.trim().slice(0, 1e3) : "";
+    return {
+      ...values,
+      customInstruction
+    };
   }
   static normalizeSuggestionRequest(input) {
     const field = String(input?.field || "");

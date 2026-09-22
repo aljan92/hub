@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, ChevronRight, Dices, Eraser, Layers, RefreshCw, Send, Sparkles, Tag, Trash2, Type, Wand2, X } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Dices, Eraser, FileText, Layers, RefreshCw, Send, Sparkles, Tag, Trash2, Type, Wand2, X } from 'lucide-react';
 import type { ActiveTab } from '../components/Sidebar';
 
 type ImageProvider = 'IDEOGRAM' | 'IDEOGRAM_V4' | 'GPT_IMAGE_2';
@@ -15,6 +15,7 @@ interface GeneratedConceptItem {
   subniche?: string;
   quote: string;
   style?: string;
+  customInstruction?: string;
   started?: boolean;
   taskId?: string;
 }
@@ -58,6 +59,7 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
 
   // Tab 2: Manual Designer Form State
   const [values, setValues] = useState<FormValues>({ niche1: '', niche2: '', subniche: '', quote: '', style: '' });
+  const [customInstruction, setCustomInstruction] = useState('');
   const [models, setModels] = useState<ModelItem[]>([]);
   const [suggestionModel, setSuggestionModel] = useState('');
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -121,6 +123,7 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
         subniche: c.subniche || '',
         quote: c.quote || '',
         style: c.style || '',
+        customInstruction: c.customInstruction || '',
         started: false
       }));
       setGeneratedConcepts(newItems);
@@ -157,6 +160,7 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
           subniche: item.subniche || '',
           quote: item.quote,
           style: item.style || '',
+          customInstruction: item.customInstruction || '',
           imageProvider,
           promptPoolEnabled
         })
@@ -193,7 +197,8 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
             niche2: c.niche2 || '',
             subniche: c.subniche || '',
             quote: c.quote,
-            style: c.style || ''
+            style: c.style || '',
+            customInstruction: c.customInstruction || ''
           })),
           imageProvider,
           promptPoolEnabled
@@ -264,6 +269,7 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
 
   const handleReset = () => {
     setValues(current => ({ niche1: current.niche1, niche2: '', subniche: '', quote: '', style: '' }));
+    setCustomInstruction('');
     clearHistory();
     setFieldErrors({});
     setFormError('');
@@ -305,7 +311,7 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
     try {
       const response = await fetch('/api/v1/designer/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...values, imageProvider, promptPoolEnabled, requestId })
+        body: JSON.stringify({ ...values, customInstruction, imageProvider, promptPoolEnabled, requestId })
       });
       const data = await response.json();
       if (!response.ok || !data.success || !data.taskId) throw new Error(data.error || 'Task konnte nicht angelegt werden.');
@@ -657,6 +663,21 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
                       />
                     </div>
 
+                    <div className="mb-3">
+                      <label className="flex items-center gap-1 text-[10px] font-semibold text-slate-400 mb-1">
+                        <FileText className="w-3 h-3 text-indigo-400" />
+                        Custom Instructions (optional)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={concept.customInstruction || ''}
+                        disabled={concept.started}
+                        placeholder="z. B. Keine Personen darstellen, minimalistischer Linienstil, Pastelltöne..."
+                        onChange={e => updateConceptField(concept.id, 'customInstruction', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-primary-500 disabled:opacity-60 resize-y"
+                      />
+                    </div>
+
                     <div className="flex items-center justify-between pt-1 border-t border-slate-800/60">
                       <div className="text-[11px] text-slate-500">
                         {concept.started ? (
@@ -816,6 +837,20 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
               )}
             </div>
           ))}
+
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 mb-1.5">
+              <FileText className="w-3.5 h-3.5 text-indigo-400" />
+              Custom Instructions (optional)
+            </label>
+            <textarea
+              rows={2}
+              value={customInstruction}
+              onChange={e => setCustomInstruction(e.target.value)}
+              placeholder="z. B. Keine Personen darstellen, minimalistischer Linienstil, warme Pastellfarben..."
+              className="w-full bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary-500 resize-y"
+            />
+          </div>
 
           {formError && (
             <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">

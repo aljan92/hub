@@ -13,7 +13,14 @@ test('designer values preserve the exact D2 field contract and require niche1', 
     quote: ' Grow Through It ', style: ''
   }), {
     niche1: 'Gardening', niche2: 'Cats', subniche: 'Vegetable Gardening',
-    quote: 'Grow Through It', style: ''
+    quote: 'Grow Through It', style: '', customInstruction: ''
+  });
+  assert.deepEqual(DesignerService.normalizeValues({
+    niche1: 'Gardening', quote: 'Grow', style: 'Retro',
+    customInstruction: '  No humans, pastel colors only  '
+  }), {
+    niche1: 'Gardening', niche2: '', subniche: '', quote: 'Grow', style: 'Retro',
+    customInstruction: 'No humans, pastel colors only'
   });
   assert.throws(() => DesignerService.normalizeValues({ niche1: '   ' }), /Niche 1/);
 });
@@ -108,7 +115,7 @@ test('designer task creation is idempotent and sends no precomputed prompt aroun
     assert.equal(calls[0].source, 'DESIGNER');
     assert.deepEqual(calls[0].payload, {
       niche1: 'Gardening', niche2: 'Cats', subniche: 'Vegetables', quote: 'Grow Through It', style: 'Retro engraving',
-      imageProvider: 'GPT_IMAGE_2', promptPoolEnabled: true
+      customInstruction: '', imageProvider: 'GPT_IMAGE_2', promptPoolEnabled: true
     });
     assert.equal('prompt' in calls[0].payload, false);
   } finally {
@@ -116,7 +123,51 @@ test('designer task creation is idempotent and sends no precomputed prompt aroun
   }
 });
 
-test('designer UI contains reset/history/model controls and no legacy prompt preview call', () => {
+test('designer task creation preserves customInstruction in payload for single and batch creation', () => {
+  const original = TaskLogService.createTaskLog;
+  const calls: any[] = [];
+  (TaskLogService as any).createTaskLog = (params: any) => {
+    calls.push(params);
+    return { id: `#${calls.length}-D`, source: params.source, payload: params.payload };
+  };
+  try {
+    // Single creation
+    DesignerService.createTask({
+      requestId: 'custom_inst_single_1',
+      niche1: 'Coffee',
+      quote: 'Espresso Yourself',
+      customInstruction: 'Vintage 1960s poster style with warm brown tones'
+    }, 'local');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].payload.customInstruction, 'Vintage 1960s poster style with warm brown tones');
+
+    // Batch creation
+    DesignerService.batchCreateTasks({
+      concepts: [
+        {
+          requestId: 'custom_inst_batch_1',
+          niche1: 'Yoga',
+          quote: 'Namaste in Bed',
+          customInstruction: 'Clean line art silhouette'
+        },
+        {
+          requestId: 'custom_inst_batch_2',
+          niche1: 'Gaming',
+          quote: 'Respawn Ready',
+          customInstruction: ''
+        }
+      ],
+      clientIp: 'local'
+    });
+    assert.equal(calls.length, 3);
+    assert.equal(calls[1].payload.customInstruction, 'Clean line art silhouette');
+    assert.equal(calls[2].payload.customInstruction, '');
+  } finally {
+    (TaskLogService as any).createTaskLog = original;
+  }
+});
+
+test('designer UI contains reset/history/model controls, custom instructions, and no legacy prompt preview call', () => {
   const source = fs.readFileSync(path.resolve(process.cwd(), 'src/client/views/DesignerView.tsx'), 'utf8');
   assert.match(source, /designerSuggestionModel/);
   assert.match(source, /\/api\/v1\/llm\/models\?refresh=true/);
@@ -124,6 +175,8 @@ test('designer UI contains reset/history/model controls and no legacy prompt pre
   assert.match(source, /niche1: current\.niche1, niche2: '', subniche: '', quote: '', style: ''/);
   assert.match(source, /\/api\/v1\/designer\/suggest/);
   assert.match(source, /model: suggestionModel/);
+  assert.match(source, /Custom Instructions/);
+  assert.match(source, /customInstruction/);
   assert.doesNotMatch(source, /\/api\/v1\/designer\/prompt/);
   assert.doesNotMatch(source, /generatedPrompt/);
 });
