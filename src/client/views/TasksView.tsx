@@ -1121,24 +1121,26 @@ export const TasksView: React.FC = () => {
     }
 
     setIsBulkFairUse(true);
+    setBulkFairUseProgress(`${fieldsToEvaluate.length} parallel`);
     let count = 0;
     try {
-      for (const f of fieldsToEvaluate) {
-        setBulkFairUseProgress(fieldLabels[f] || f);
-        const text = editableListing[f];
-        const data = getFieldTmInfo(f);
-        const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/evaluate-field-tm`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ field: f, text, hits: data?.hits })
-        });
-        const evalData = await res.json();
-        if (evalData.success) {
-          setFieldFairUse(prev => ({ ...prev, [f]: evalData }));
-          count++;
-        }
-      }
-      showNotification('success', `Bulk Fair Use abgeschlossen: ${count} Feld(er) erfolgreich bewertet.`);
+      await Promise.allSettled(
+        fieldsToEvaluate.map(async (f) => {
+          const text = editableListing[f];
+          const data = getFieldTmInfo(f);
+          const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/evaluate-field-tm`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ field: f, text, hits: data?.hits })
+          });
+          const evalData = await res.json();
+          if (evalData.success) {
+            setFieldFairUse(prev => ({ ...prev, [f]: evalData }));
+            count++;
+          }
+        })
+      );
+      showNotification('success', `Bulk Fair Use abgeschlossen: ${count} von ${fieldsToEvaluate.length} Feldern parallel bewertet.`);
     } catch (err: any) {
       showNotification('error', err.message || 'Verbindungsfehler bei Bulk Fair Use');
     } finally {
@@ -1152,13 +1154,6 @@ export const TasksView: React.FC = () => {
     const fields: Array<'brand' | 'title' | 'bullet1' | 'bullet2' | 'description'> = [
       'brand', 'title', 'bullet1', 'bullet2', 'description'
     ];
-    const fieldLabels: Record<string, string> = {
-      brand: 'Brand',
-      title: 'Title',
-      bullet1: 'Bullet 1',
-      bullet2: 'Bullet 2',
-      description: 'Description'
-    };
 
     // Filter fields: skip clean fields and fields positively approved as Fair Use
     const fieldsToRewrite = fields.filter(f => {
@@ -1177,35 +1172,37 @@ export const TasksView: React.FC = () => {
     }
 
     setIsBulkRewrite(true);
+    setBulkRewriteProgress(`${fieldsToRewrite.length} parallel`);
     let count = 0;
     try {
-      for (const f of fieldsToRewrite) {
-        setBulkRewriteProgress(fieldLabels[f] || f);
-        const text = editableListing[f];
-        const data = getFieldTmInfo(f);
-        const fairUseEvaluation = fieldFairUse[f];
-        const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/rewrite-field-tm`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ field: f, text, hits: data?.hits, fairUseEvaluation })
-        });
-        const rwData = await res.json();
-        if (rwData.success) {
-          if (rwData.rewrittenText) {
-            setEditableListing(prev => ({ ...prev, [f]: rwData.rewrittenText }));
-          }
-          if (rwData.usptoResult) {
-            setSingleFieldResults(prev => ({ ...prev, [f]: rwData.usptoResult }));
-          }
-          setFieldFairUse(prev => {
-            const next = { ...prev };
-            delete next[f];
-            return next;
+      await Promise.allSettled(
+        fieldsToRewrite.map(async (f) => {
+          const text = editableListing[f];
+          const data = getFieldTmInfo(f);
+          const fairUseEvaluation = fieldFairUse[f];
+          const res = await fetch(`/api/v1/tasks/${encodeURIComponent(activeTask.id)}/rewrite-field-tm`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ field: f, text, hits: data?.hits, fairUseEvaluation })
           });
-          count++;
-        }
-      }
-      showNotification('success', `Bulk Rewrite abgeschlossen: ${count} Feld(er) erfolgreich umgeschrieben & per USPTO geprüft.`);
+          const rwData = await res.json();
+          if (rwData.success) {
+            if (rwData.rewrittenText) {
+              setEditableListing(prev => ({ ...prev, [f]: rwData.rewrittenText }));
+            }
+            if (rwData.usptoResult) {
+              setSingleFieldResults(prev => ({ ...prev, [f]: rwData.usptoResult }));
+            }
+            setFieldFairUse(prev => {
+              const next = { ...prev };
+              delete next[f];
+              return next;
+            });
+            count++;
+          }
+        })
+      );
+      showNotification('success', `Bulk Rewrite abgeschlossen: ${count} Feld(er) parallel umgeschrieben & per USPTO geprüft.`);
     } catch (err: any) {
       showNotification('error', err.message || 'Verbindungsfehler bei Bulk Rewrite');
     } finally {
