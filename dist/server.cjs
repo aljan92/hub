@@ -1246,28 +1246,37 @@ var init_taskRepository = __esm2({
 });
 
 // src/server/services/taskExecutionLock.ts
-var TaskExecutionLock;
+var import_node_async_hooks, import_node_crypto4, TaskExecutionLock;
 var init_taskExecutionLock = __esm2({
   "src/server/services/taskExecutionLock.ts"() {
     "use strict";
+    import_node_async_hooks = require("node:async_hooks");
+    import_node_crypto4 = require("node:crypto");
     TaskExecutionLock = class {
       static activeLocks = /* @__PURE__ */ new Map();
+      static execution = new import_node_async_hooks.AsyncLocalStorage();
+      /** Nested asynchronous calls inherit the token of their concrete execution. */
+      static runWithExecution(work) {
+        if (this.execution.getStore()) return work();
+        return this.execution.run({ token: (0, import_node_crypto4.randomUUID)() }, work);
+      }
       /**
        * Attempts to acquire execution lock for a given taskId.
-       * Re-entrant: If already acquired by the same owner, increments depth and returns true.
-       * Returns false if task is already running under a DIFFERENT owner.
+       * Re-entrant only inside the same asynchronous execution and owner.
+       * Calls outside runWithExecution are independent, even if their owner labels match.
        */
       static acquire(taskId, owner) {
         const cleanId = taskId.trim();
         const existing = this.activeLocks.get(cleanId);
+        const token = this.execution.getStore()?.token || (0, import_node_crypto4.randomUUID)();
         if (existing) {
-          if (existing.owner === owner) {
+          if (existing.owner === owner && existing.token === token) {
             existing.depth++;
             return true;
           }
           return false;
         }
-        this.activeLocks.set(cleanId, { owner, depth: 1, acquiredAt: (/* @__PURE__ */ new Date()).toISOString() });
+        this.activeLocks.set(cleanId, { owner, token, depth: 1, acquiredAt: (/* @__PURE__ */ new Date()).toISOString() });
         return true;
       }
       /**
@@ -52230,13 +52239,13 @@ var init_trademarkWhitelistService = __esm2({
 });
 
 // src/server/services/systemPromptService.ts
-var import_fs76, import_path71, import_node_crypto4, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, LEGACY_LISTING_GENERATOR_SYSTEM_PROMPT_V1, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, LEGACY_TRADEMARK_REFEREE_SYSTEM_PROMPT_V2, DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
+var import_fs76, import_path71, import_node_crypto5, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, LEGACY_LISTING_GENERATOR_SYSTEM_PROMPT_V1, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, LEGACY_TRADEMARK_REFEREE_SYSTEM_PROMPT_V2, DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
 var init_systemPromptService = __esm2({
   "src/server/services/systemPromptService.ts"() {
     "use strict";
     import_fs76 = __toESM2(require("fs"), 1);
     import_path71 = __toESM2(require("path"), 1);
-    import_node_crypto4 = require("node:crypto");
+    import_node_crypto5 = require("node:crypto");
     DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT = `You are an expert Image Prompt Engineer and Art Director specializing in original, commercially usable T-shirt graphics for print-on-demand products.
 
 Your task is to transform the supplied niches, quote, style, feeling, colors, and custom instructions into one distinctive, visually specific image-generation prompt.
@@ -53749,7 +53758,7 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
       static listingPromptVersion = "compact-v2";
       static trademarkPromptVersion = "us-tm-v3";
       static promptHash(prompt) {
-        return (0, import_node_crypto4.createHash)("sha256").update(prompt, "utf8").digest("hex");
+        return (0, import_node_crypto5.createHash)("sha256").update(prompt, "utf8").digest("hex");
       }
       static ensureDataDir() {
         const dir = import_path71.default.dirname(this.promptFile);
@@ -56124,11 +56133,11 @@ var init_listingSanitizationService = __esm2({
 });
 
 // src/server/services/trademarkPolicyService.ts
-var import_node_crypto5, US_TM_POLICY_VERSION, US_TM_PROOF_SCHEMA_VERSION, TrademarkPolicyService;
+var import_node_crypto6, US_TM_POLICY_VERSION, US_TM_PROOF_SCHEMA_VERSION, TrademarkPolicyService;
 var init_trademarkPolicyService = __esm2({
   "src/server/services/trademarkPolicyService.ts"() {
     "use strict";
-    import_node_crypto5 = require("node:crypto");
+    import_node_crypto6 = require("node:crypto");
     init_productCatalogService();
     init_productAvailabilityPolicy();
     init_listingSanitizationService();
@@ -56151,7 +56160,7 @@ var init_trademarkPolicyService = __esm2({
       }
       static listingFingerprint(listing) {
         const projection = ["brand", "title", "bullet1", "bullet2", "description"].map((key) => [key, ListingSanitizationService.sanitizeText(String(listing?.[key] || ""))]);
-        return (0, import_node_crypto5.createHash)("sha256").update(JSON.stringify(projection)).digest("hex");
+        return (0, import_node_crypto6.createHash)("sha256").update(JSON.stringify(projection)).digest("hex");
       }
       static resolveProductScope(additionalProductIds = []) {
         const catalog = ProductCatalogService.getCatalog();
@@ -56177,7 +56186,7 @@ var init_trademarkPolicyService = __esm2({
           productIds: products.map((product) => product.id),
           niceClasses,
           unconfiguredProductIds,
-          catalogFingerprint: (0, import_node_crypto5.createHash)("sha256").update(JSON.stringify(projection)).digest("hex")
+          catalogFingerprint: (0, import_node_crypto6.createHash)("sha256").update(JSON.stringify(projection)).digest("hex")
         };
       }
       static productsForClasses(products, classes) {
@@ -144307,7 +144316,7 @@ ${value2}`, dataLines++;
         this._protocolVersion = version22;
       }
     };
-    var import_node_crypto9 = require("node:crypto");
+    var import_node_crypto10 = require("node:crypto");
     var import_node_tls = require("node:tls");
     var import_bytes = __toESM3(require_bytes2());
     function getRawBody(req, { limit, encoding }) {
@@ -144343,7 +144352,7 @@ ${value2}`, dataLines++;
       constructor(_endpoint, res, options2) {
         this._endpoint = _endpoint;
         this.res = res;
-        this._sessionId = (0, import_node_crypto9.randomUUID)();
+        this._sessionId = (0, import_node_crypto10.randomUUID)();
         this._options = options2 || { enableDnsRebindingProtection: false };
       }
       /**
@@ -222648,13 +222657,13 @@ function inject300Dpi(pngBuffer) {
   }
   return Buffer.concat(chunks);
 }
-var import_node_fs, import_node_path, import_node_crypto6, currentDir, ArtworkResizeService;
+var import_node_fs, import_node_path, import_node_crypto7, currentDir, ArtworkResizeService;
 var init_artworkResizeService = __esm2({
   "src/server/services/artworkResizeService.ts"() {
     "use strict";
     import_node_fs = __toESM2(require("node:fs"), 1);
     import_node_path = __toESM2(require("node:path"), 1);
-    import_node_crypto6 = require("node:crypto");
+    import_node_crypto7 = require("node:crypto");
     init_artworkRenderSession();
     init_artworkRenderRuntime();
     init_artworkBrushRuntime();
@@ -222686,7 +222695,7 @@ var init_artworkResizeService = __esm2({
         return { kind: "PNG", path: pngPath };
       }
       static fingerprint(source12, customBackgroundColor) {
-        return (0, import_node_crypto6.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles(customBackgroundColor))).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
+        return (0, import_node_crypto7.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles(customBackgroundColor))).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
       }
       static hasCurrentAssets(assets, fingerprint, customBackgroundColor) {
         if (!assets || assets.renderFingerprint !== fingerprint) return false;
@@ -222701,7 +222710,7 @@ var init_artworkResizeService = __esm2({
             } finally {
               import_node_fs.default.closeSync(fd);
             }
-            return header.toString("hex", 0, 8) === "89504e470d0a1a0a" && header.readUInt32BE(16) === p.width && header.readUInt32BE(20) === p.height && assets.renderFileHashes?.[p.key] === (0, import_node_crypto6.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex");
+            return header.toString("hex", 0, 8) === "89504e470d0a1a0a" && header.readUInt32BE(16) === p.width && header.readUInt32BE(20) === p.height && assets.renderFileHashes?.[p.key] === (0, import_node_crypto7.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex");
           } catch {
             return false;
           }
@@ -222712,7 +222721,7 @@ var init_artworkResizeService = __esm2({
         const fingerprint = this.fingerprint(input, customBackgroundColor);
         const files = await this.renderProfiles(taskId, input, artworkProfiles(customBackgroundColor), onProgress, fingerprint);
         const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants } = files;
-        const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto6.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
+        const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto7.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
         return { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants, renderFingerprint: fingerprint, renderFileHashes };
       }
       static async generateProductVariant(taskId, source12, id, config, customBackgroundColor) {
@@ -222748,7 +222757,7 @@ var init_artworkResizeService = __esm2({
             onProgress?.("VARIANT", `\u{1F3A8} Render ${profile.key} (${profile.width}\xD7${profile.height})\u2026`);
             const start3 = Date.now();
             const output = import_node_path.default.join(dir, cleanId + "_" + profile.suffix + ".png");
-            const temporary = output + "." + (0, import_node_crypto6.randomUUID)() + ".tmp";
+            const temporary = output + "." + (0, import_node_crypto7.randomUUID)() + ".tmp";
             let stage = "RENDER";
             try {
               let png;
@@ -223446,16 +223455,17 @@ var init_visionOptimizationService = __esm2({
 });
 
 // src/server/services/pipelineExecutionCoordinator.ts
-var import_node_async_hooks, PipelineExecutionCoordinator;
+var import_node_async_hooks2, PipelineExecutionCoordinator;
 var init_pipelineExecutionCoordinator = __esm2({
   "src/server/services/pipelineExecutionCoordinator.ts"() {
     "use strict";
-    import_node_async_hooks = require("node:async_hooks");
+    import_node_async_hooks2 = require("node:async_hooks");
     init_taskRepository();
+    init_taskExecutionLock();
     PipelineExecutionCoordinator = class {
       static activeTaskId = null;
       static waiters = [];
-      static context = new import_node_async_hooks.AsyncLocalStorage();
+      static context = new import_node_async_hooks2.AsyncLocalStorage();
       static getSnapshot() {
         return {
           activeTaskId: this.activeTaskId,
@@ -223464,13 +223474,14 @@ var init_pipelineExecutionCoordinator = __esm2({
       }
       static async runExclusive(taskId, work, onWaiting) {
         const cleanTaskId = String(taskId || "").trim() || "unknown-task";
-        if (this.context.getStore()) return work();
+        if (this.context.getStore()?.active) return work();
         if (this.activeTaskId !== null) {
           await onWaiting?.();
           await new Promise((resolve) => this.waiters.push({ taskId: cleanTaskId, resolve }));
         } else {
           this.activeTaskId = cleanTaskId;
         }
+        const executionContext = { taskId: cleanTaskId, active: true };
         try {
           try {
             const existingTask = TaskRepository.getTaskById(cleanTaskId);
@@ -223480,8 +223491,9 @@ var init_pipelineExecutionCoordinator = __esm2({
             }
           } catch {
           }
-          return await this.context.run({ taskId: cleanTaskId }, work);
+          return await TaskExecutionLock.runWithExecution(() => this.context.run(executionContext, work));
         } finally {
+          executionContext.active = false;
           const next = this.waiters.shift();
           if (next) {
             this.activeTaskId = next.taskId;
@@ -228317,10 +228329,10 @@ __export2(finalizationService_exports, {
 });
 function finalizationInput(params2) {
   const { prepareOnly, artifactRunId, ...input } = params2;
-  return (0, import_node_crypto7.createHash)("sha256").update(JSON.stringify(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)))).digest("hex");
+  return (0, import_node_crypto8.createHash)("sha256").update(JSON.stringify(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)))).digest("hex");
 }
 function finalizationTaskData(task) {
-  return (0, import_node_crypto7.createHash)("sha256").update(JSON.stringify(task && [
+  return (0, import_node_crypto8.createHash)("sha256").update(JSON.stringify(task && [
     task.id,
     task.source,
     task.designId,
@@ -228343,12 +228355,12 @@ function createFinalizationOwnership(params2, task) {
   if (task.id !== params2.taskId) throw new Error("Task-Identit\xE4t der Finalisierung stimmt nicht \xFCberein.");
   return { taskId: task.id, input: finalizationInput(params2), taskData: finalizationTaskData(task) };
 }
-var import_fs86, import_node_crypto7, FinalizationService;
+var import_fs86, import_node_crypto8, FinalizationService;
 var init_finalizationService = __esm2({
   "src/server/services/finalizationService.ts"() {
     "use strict";
     import_fs86 = __toESM2(require("fs"), 1);
-    import_node_crypto7 = require("node:crypto");
+    import_node_crypto8 = require("node:crypto");
     init_taskLogService();
     init_queueService();
     init_listingSanitizationService();
@@ -228523,7 +228535,7 @@ var init_finalizationService = __esm2({
           if (!params2.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint, resolvedCustomBg)) {
             resizedAssets = task.resizedAssets;
           } else {
-            const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto7.randomUUID)() : taskId);
+            const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto8.randomUUID)() : taskId);
             resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source12, (stage, title, metrics) => {
               TaskLogService.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -231027,6 +231039,9 @@ var init_taskRecoveryService = __esm2({
        * Increments recoveryAttempts ONLY here when execution actually starts.
        */
       static async processSingleRecoveryJob(job) {
+        return TaskExecutionLock.runWithExecution(() => this.processSingleRecoveryJobExclusive(job));
+      }
+      static async processSingleRecoveryJobExclusive(job) {
         const { taskId, source: source12, status } = job;
         console.log(`[TaskRecovery] \u{1F504} Processing recovery for task ${taskId} (${source12}, ${status})...`);
         if (!TaskExecutionLock.acquire(taskId, "RECOVERY")) {
@@ -235338,6 +235353,9 @@ Beantworte die Analysefragen streng als JSON!`;
        * Checkpoint 3: Submit Manual Trademark Review
        */
       static async submitTmReview(taskId, params2) {
+        return TaskExecutionLock.runWithExecution(() => this.submitTmReviewExclusive(taskId, params2));
+      }
+      static async submitTmReviewExclusive(taskId, params2) {
         if (TaskExecutionLock.isLocked(taskId)) throw new Error("Task wird bereits verarbeitet; TM-Entscheidung gesperrt.");
         const task = this.getTaskLogById(taskId);
         if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
@@ -240414,7 +240432,7 @@ var UploadScheduleService = class {
 
 // src/server/services/manualFinalizationService.ts
 var import_node_fs2 = __toESM2(require("node:fs"), 1);
-var import_node_crypto8 = require("node:crypto");
+var import_node_crypto9 = require("node:crypto");
 init_finalizationService();
 init_queueService();
 init_taskLogService();
@@ -240471,7 +240489,7 @@ var ManualFinalizationService = class {
       const result2 = await FinalizationService.finalizeForQueue({
         ...params2,
         prepareOnly: true,
-        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto8.randomUUID)()}`
+        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto9.randomUUID)()}`
       });
       if (!result2.success || !result2.resizedAssets || !result2.preparedListing) throw new Error(result2.error || "Vorbereitung fehlgeschlagen");
       const assets = result2.resizedAssets;

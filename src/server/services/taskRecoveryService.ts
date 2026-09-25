@@ -541,6 +541,10 @@ export class TaskRecoveryService {
    * Increments recoveryAttempts ONLY here when execution actually starts.
    */
   public static async processSingleRecoveryJob(job: ReservedRecoveryJob): Promise<void> {
+    return TaskExecutionLock.runWithExecution(() => this.processSingleRecoveryJobExclusive(job));
+  }
+
+  private static async processSingleRecoveryJobExclusive(job: ReservedRecoveryJob): Promise<void> {
     const { taskId, source, status } = job;
     console.log(`[TaskRecovery] 🔄 Processing recovery for task ${taskId} (${source}, ${status})...`);
 

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { TaskRepository } from '../storage/taskRepository';
+import { TaskExecutionLock } from './taskExecutionLock';
 
 export interface PipelineExecutionSnapshot {
   activeTaskId: string | null;
@@ -10,7 +11,7 @@ export interface PipelineExecutionSnapshot {
 export class PipelineExecutionCoordinator {
   private static activeTaskId: string | null = null;
   private static waiters: Array<{ taskId: string; resolve: () => void }> = [];
-  private static context = new AsyncLocalStorage<{ taskId: string }>();
+  private static context = new AsyncLocalStorage<{ taskId: string; active: boolean }>();
 
   public static getSnapshot(): PipelineExecutionSnapshot {
     return {
@@ -26,7 +27,7 @@ export class PipelineExecutionCoordinator {
   ): Promise<T> {
     const cleanTaskId = String(taskId || '').trim() || 'unknown-task';
     // Nested pipeline continuations in the same async execution already own the slot.
-    if (this.context.getStore()) return work();
+    if (this.context.getStore()?.active) return work();
 
     if (this.activeTaskId !== null) {
       await onWaiting?.();
@@ -35,6 +36,7 @@ export class PipelineExecutionCoordinator {
       this.activeTaskId = cleanTaskId;
     }
 
+    const executionContext = { taskId: cleanTaskId, active: true };
     try {
       try {
         const existingTask = TaskRepository.getTaskById(cleanTaskId);
@@ -46,8 +48,9 @@ export class PipelineExecutionCoordinator {
         // In tests or if TaskRepository is not yet initialized, proceed normally
       }
 
-      return await this.context.run({ taskId: cleanTaskId }, work);
+      return await TaskExecutionLock.runWithExecution(() => this.context.run(executionContext, work));
     } finally {
+      executionContext.active = false;
       const next = this.waiters.shift();
       if (next) {
         this.activeTaskId = next.taskId;

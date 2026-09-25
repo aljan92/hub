@@ -29,6 +29,8 @@ async function runTests() {
   console.log('====================================================\n');
 
   const testDir = path.resolve(process.cwd(), 'scratch', `test_prompt_cancel_${Date.now()}`);
+  const settingsPath = path.resolve(process.cwd(), 'data', 'settings.json');
+  const originalSettings = fs.existsSync(settingsPath) ? fs.readFileSync(settingsPath) : null;
   fs.mkdirSync(testDir, { recursive: true });
   TaskRepository.init(path.join(testDir, 'tasks.sqlite'));
 
@@ -164,6 +166,8 @@ async function runTests() {
     console.log('🎉 ALL PROMPT LOG TASK CANCEL TESTS PASSED!');
     console.log('====================================================\n');
   } finally {
+    if (originalSettings) fs.writeFileSync(settingsPath, originalSettings);
+    else if (fs.existsSync(settingsPath)) fs.unlinkSync(settingsPath);
     TaskRepository.close();
     TaskRepository.init();
   }

@@ -2621,6 +2621,15 @@ export class TaskLogService {
     blockedProducts?: string[];
     blockedNiceClasses?: number[];
   }) {
+    return TaskExecutionLock.runWithExecution(() => this.submitTmReviewExclusive(taskId, params));
+  }
+
+  private static async submitTmReviewExclusive(taskId: string, params: {
+    action: 'RECHECK' | 'APPROVE' | 'REJECT';
+    refinedListing?: any;
+    blockedProducts?: string[];
+    blockedNiceClasses?: number[];
+  }) {
     if (TaskExecutionLock.isLocked(taskId)) throw new Error('Task wird bereits verarbeitet; TM-Entscheidung gesperrt.');
     const task = this.getTaskLogById(taskId);
     if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);

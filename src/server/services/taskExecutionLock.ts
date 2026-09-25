@@ -1,29 +1,36 @@
-/**
- * Unified Process-Wide Task Execution Guard.
- * Ensures that a task is never executed concurrently by Recovery, normal pipeline triggers, or user actions.
- * Supports re-entrant acquisition by the same owner.
- */
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
+
+/** Process-local guard. Reentrancy belongs to one execution, not to an owner label. */
 export type LockOwner = 'NORMAL' | 'RECOVERY' | 'USER_ACTION';
 
 export class TaskExecutionLock {
-  private static activeLocks = new Map<string, { owner: LockOwner; depth: number; acquiredAt: string }>();
+  private static activeLocks = new Map<string, { owner: LockOwner; token: string; depth: number; acquiredAt: string }>();
+  private static execution = new AsyncLocalStorage<{ token: string }>();
+
+  /** Nested asynchronous calls inherit the token of their concrete execution. */
+  public static runWithExecution<T>(work: () => T): T {
+    if (this.execution.getStore()) return work();
+    return this.execution.run({ token: randomUUID() }, work);
+  }
 
   /**
    * Attempts to acquire execution lock for a given taskId.
-   * Re-entrant: If already acquired by the same owner, increments depth and returns true.
-   * Returns false if task is already running under a DIFFERENT owner.
+   * Re-entrant only inside the same asynchronous execution and owner.
+   * Calls outside runWithExecution are independent, even if their owner labels match.
    */
   public static acquire(taskId: string, owner: LockOwner): boolean {
     const cleanId = taskId.trim();
     const existing = this.activeLocks.get(cleanId);
+    const token = this.execution.getStore()?.token || randomUUID();
     if (existing) {
-      if (existing.owner === owner) {
+      if (existing.owner === owner && existing.token === token) {
         existing.depth++;
         return true;
       }
       return false;
     }
-    this.activeLocks.set(cleanId, { owner, depth: 1, acquiredAt: new Date().toISOString() });
+    this.activeLocks.set(cleanId, { owner, token, depth: 1, acquiredAt: new Date().toISOString() });
     return true;
   }
 
