@@ -45,7 +45,7 @@ import { DesignerService } from './services/designerService';
 import { DesignerConceptService } from './services/designerConceptService';
 import { AmazonDeleteDesignService } from './services/amazonDeleteDesignService';
 import { CleanupService } from './services/cleanupService';
-import { getOperationalMetrics, recordHttpRequest } from './services/operationalMetrics';
+import { getOperationalMetrics, measureJob, recordHttpRequest } from './services/operationalMetrics';
 import { PipelineExecutionCoordinator } from './services/pipelineExecutionCoordinator';
 
 dotenv.config();
@@ -292,8 +292,15 @@ let cachedStats: any = {
   hasSupabase: false
 };
 
+let statsRefreshInFlight: Promise<void> | null = null;
 async function refreshStatsInBackground() {
   if (!isSystemReady) return;
+  if (statsRefreshInFlight) return statsRefreshInFlight;
+  statsRefreshInFlight = measureJob('stats-refresh', undefined, refreshStatsOnce);
+  try { await statsRefreshInFlight; } finally { statsRefreshInFlight = null; }
+}
+
+async function refreshStatsOnce() {
   try {
     const supabaseStats = await SupabaseService.getStats();
     const ratelimiter = await SyncEngine.fetchDashboardRatelimiter().catch(() => null);

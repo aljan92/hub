@@ -13,6 +13,28 @@ const MAX_SAMPLES = 100;
 const series = new Map<string, MetricSeries>();
 const eventLoop = monitorEventLoopDelay({ resolution: 20 });
 eventLoop.enable();
+const activeJobs = new Map<string, { kind: string; startedAt: number; taskId?: string }>();
+const recentJobs: Array<{ kind: string; taskId?: string; startedAt: string; durationMs: number; status: 'ok' | 'error' }> = [];
+
+/** Bounded operational timeline; no prompts, artwork, provider payloads or credentials. */
+export async function measureJob<T>(kind: string, taskId: string | undefined, work: () => Promise<T>): Promise<T> {
+  const id = randomUUID();
+  const startedAt = Date.now();
+  activeJobs.set(id, { kind, taskId, startedAt });
+  let status: 'ok' | 'error' = 'ok';
+  try {
+    return await work();
+  } catch (error) {
+    status = 'error';
+    throw error;
+  } finally {
+    const durationMs = Date.now() - startedAt;
+    activeJobs.delete(id);
+    recentJobs.push({ kind, taskId, startedAt: new Date(startedAt).toISOString(), durationMs, status });
+    if (recentJobs.length > 100) recentJobs.shift();
+    recordOperation(`job ${kind}`, durationMs, 0, status === 'error');
+  }
+}
 
 function percentile(values: number[], percent: number): number | null {
   if (values.length === 0) return null;
@@ -71,6 +93,10 @@ export function getOperationalMetrics() {
     eventLoopDelayMs: {
       p95: Math.round(eventLoop.percentile(95) / 1e6 * 100) / 100,
       max: Math.round(eventLoop.max / 1e6 * 100) / 100
+    },
+    jobs: {
+      active: [...activeJobs.values()].map(job => ({ kind: job.kind, taskId: job.taskId, startedAt: new Date(job.startedAt).toISOString(), elapsedMs: Date.now() - job.startedAt })),
+      recent: recentJobs.slice(-30)
     },
     operations: [...series.entries()].map(([name, metric]) => ({
       name,

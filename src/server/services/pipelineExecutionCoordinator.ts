@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { TaskRepository } from '../storage/taskRepository';
 import { TaskExecutionLock } from './taskExecutionLock';
+import { measureJob } from './operationalMetrics';
 
 export interface PipelineExecutionSnapshot {
   activeTaskId: string | null;
@@ -58,7 +59,7 @@ export class PipelineExecutionCoordinator {
         // In tests or if TaskRepository is not yet initialized, proceed normally
       }
 
-      return await TaskExecutionLock.runWithExecution(() => this.context.run(executionContext, work));
+      return await measureJob('pipeline', cleanTaskId, () => TaskExecutionLock.runWithExecution(() => this.context.run(executionContext, work)));
     } finally {
       executionContext.active = false;
       const next = this.waiters.shift();

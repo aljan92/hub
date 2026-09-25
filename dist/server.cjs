@@ -288,6 +288,24 @@ var init_atomicFileStorage = __esm2({
 });
 
 // src/server/services/operationalMetrics.ts
+async function measureJob(kind, taskId, work) {
+  const id = (0, import_node_crypto2.randomUUID)();
+  const startedAt = Date.now();
+  activeJobs.set(id, { kind, taskId, startedAt });
+  let status = "ok";
+  try {
+    return await work();
+  } catch (error) {
+    status = "error";
+    throw error;
+  } finally {
+    const durationMs = Date.now() - startedAt;
+    activeJobs.delete(id);
+    recentJobs.push({ kind, taskId, startedAt: new Date(startedAt).toISOString(), durationMs, status });
+    if (recentJobs.length > 100) recentJobs.shift();
+    recordOperation(`job ${kind}`, durationMs, 0, status === "error");
+  }
+}
 function percentile(values, percent) {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -342,6 +360,10 @@ function getOperationalMetrics() {
       p95: Math.round(eventLoop.percentile(95) / 1e6 * 100) / 100,
       max: Math.round(eventLoop.max / 1e6 * 100) / 100
     },
+    jobs: {
+      active: [...activeJobs.values()].map((job) => ({ kind: job.kind, taskId: job.taskId, startedAt: new Date(job.startedAt).toISOString(), elapsedMs: Date.now() - job.startedAt })),
+      recent: recentJobs.slice(-30)
+    },
     operations: [...series.entries()].map(([name, metric]) => ({
       name,
       count: metric.count,
@@ -351,7 +373,7 @@ function getOperationalMetrics() {
     }))
   };
 }
-var import_node_crypto2, import_node_perf_hooks, MAX_SAMPLES, series, eventLoop;
+var import_node_crypto2, import_node_perf_hooks, MAX_SAMPLES, series, eventLoop, activeJobs, recentJobs;
 var init_operationalMetrics = __esm2({
   "src/server/services/operationalMetrics.ts"() {
     "use strict";
@@ -361,6 +383,8 @@ var init_operationalMetrics = __esm2({
     series = /* @__PURE__ */ new Map();
     eventLoop = (0, import_node_perf_hooks.monitorEventLoopDelay)({ resolution: 20 });
     eventLoop.enable();
+    activeJobs = /* @__PURE__ */ new Map();
+    recentJobs = [];
   }
 });
 
@@ -221995,6 +222019,7 @@ var init_artworkRenderSession = __esm2({
     import_node_child_process = require("node:child_process");
     import_node_util = require("node:util");
     init_browserSessionService();
+    init_operationalMetrics();
     execute = (0, import_node_util.promisify)(import_node_child_process.execFile);
     ArtworkRenderSession = class {
       static tail = Promise.resolve();
@@ -222005,59 +222030,61 @@ var init_artworkRenderSession = __esm2({
           release = resolve;
         });
         await previous;
-        let browser;
-        let server3;
-        let timer;
-        let sampler;
-        let sampleInFlight;
-        let peakProcessTreeRssMiB = null;
-        const started = Date.now();
-        try {
-          server3 = await chromium.launchServer({
-            executablePath: findChromiumExecutable() || void 0,
-            headless: true,
-            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
-          });
-          browser = await chromium.connect(server3.wsEndpoint());
-          const pid = server3.process().pid;
-          const sample = () => {
-            if (!pid || sampleInFlight) return;
-            sampleInFlight = processTreeRss(pid).then((rss) => {
-              peakProcessTreeRssMiB = Math.max(peakProcessTreeRssMiB || 0, rss);
-            }).catch(() => {
-            }).finally(() => {
-              sampleInFlight = void 0;
-            });
-          };
-          sample();
-          sampler = setInterval(sample, 1e3);
-          const context2 = await browser.newContext({ viewport: { width: 4500, height: 5400 }, deviceScaleFactor: 1 });
-          await context2.route("**/*", (route2) => route2.abort());
-          const page = await context2.newPage();
-          page.setDefaultTimeout(12e4);
-          await page.setContent('<html><head><style>*{margin:0;padding:0}body{background:transparent}img{display:block}</style><script>window.__name=t=>t;</script></head><body><img id="output"></body></html>');
-          const timeout = new Promise((_, reject) => {
-            timer = setTimeout(() => {
-              reject(new Error("Artwork-Renderzeit \xFCberschritten (10 Minuten)"));
-              void browser?.close();
-            }, 6e5);
-          });
-          return await Promise.race([work(page), timeout]);
-        } finally {
-          if (timer) clearTimeout(timer);
-          if (sampler) clearInterval(sampler);
-          await sampleInFlight;
+        return measureJob("artwork-render", void 0, async () => {
+          let browser;
+          let server3;
+          let timer;
+          let sampler;
+          let sampleInFlight;
+          let peakProcessTreeRssMiB = null;
+          const started = Date.now();
           try {
-            await browser?.close();
+            server3 = await chromium.launchServer({
+              executablePath: findChromiumExecutable() || void 0,
+              headless: true,
+              args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+            });
+            browser = await chromium.connect(server3.wsEndpoint());
+            const pid = server3.process().pid;
+            const sample = () => {
+              if (!pid || sampleInFlight) return;
+              sampleInFlight = processTreeRss(pid).then((rss) => {
+                peakProcessTreeRssMiB = Math.max(peakProcessTreeRssMiB || 0, rss);
+              }).catch(() => {
+              }).finally(() => {
+                sampleInFlight = void 0;
+              });
+            };
+            sample();
+            sampler = setInterval(sample, 1e3);
+            const context2 = await browser.newContext({ viewport: { width: 4500, height: 5400 }, deviceScaleFactor: 1 });
+            await context2.route("**/*", (route2) => route2.abort());
+            const page = await context2.newPage();
+            page.setDefaultTimeout(12e4);
+            await page.setContent('<html><head><style>*{margin:0;padding:0}body{background:transparent}img{display:block}</style><script>window.__name=t=>t;</script></head><body><img id="output"></body></html>');
+            const timeout = new Promise((_, reject) => {
+              timer = setTimeout(() => {
+                reject(new Error("Artwork-Renderzeit \xFCberschritten (10 Minuten)"));
+                void browser?.close();
+              }, 6e5);
+            });
+            return await Promise.race([work(page), timeout]);
           } finally {
+            if (timer) clearTimeout(timer);
+            if (sampler) clearInterval(sampler);
+            await sampleInFlight;
             try {
-              await server3?.close();
+              await browser?.close();
             } finally {
-              console.log("[ArtworkRenderer] Job-Ressourcen", JSON.stringify({ ms: Date.now() - started, peakProcessTreeRssMiB, sampleIntervalMs: 1e3 }));
-              release();
+              try {
+                await server3?.close();
+              } finally {
+                console.log("[ArtworkRenderer] Job-Ressourcen", JSON.stringify({ ms: Date.now() - started, peakProcessTreeRssMiB, sampleIntervalMs: 1e3 }));
+                release();
+              }
             }
           }
-        }
+        });
       }
     };
   }
@@ -223462,6 +223489,7 @@ var init_pipelineExecutionCoordinator = __esm2({
     import_node_async_hooks2 = require("node:async_hooks");
     init_taskRepository();
     init_taskExecutionLock();
+    init_operationalMetrics();
     PipelineExecutionCoordinator = class {
       static activeTaskId = null;
       static waiters = [];
@@ -223503,7 +223531,7 @@ var init_pipelineExecutionCoordinator = __esm2({
             }
           } catch {
           }
-          return await TaskExecutionLock.runWithExecution(() => this.context.run(executionContext, work));
+          return await measureJob("pipeline", cleanTaskId, () => TaskExecutionLock.runWithExecution(() => this.context.run(executionContext, work)));
         } finally {
           executionContext.active = false;
           const next = this.waiters.shift();
@@ -225532,6 +225560,7 @@ var init_syncEngine = __esm2({
     init_supabaseService();
     init_settingsService();
     init_browserSessionService();
+    init_operationalMetrics();
     init_atomicFileStorage();
     init_amazonRetailIdentityService();
     init_syncHealthService();
@@ -225927,7 +225956,7 @@ var init_syncEngine = __esm2({
           }
           if (this.state.autoUpdateEnabled && !this.state.isScanning && !this.auditRequested) {
             try {
-              await this.runSmartSync();
+              await measureJob("sync-smart", void 0, () => this.runSmartSync());
               const fullAt = this.currentScope ? this.store().state(this.currentScope).full_at : null;
               if (fullAt && Date.now() - fullAt >= WEEK_MS && Date.now() - this.weeklyAttemptAt >= 6 * 60 * 60 * 1e3) {
                 this.weeklyAttemptAt = Date.now();
@@ -225942,7 +225971,7 @@ var init_syncEngine = __esm2({
         this.asinResolveTimer = setInterval(async () => {
           if (this.state.autoUpdateEnabled && !this.state.isScanning && !this.auditRequested) {
             try {
-              await this.runChildAsinShadowBatch(CHILD_ASIN_SHADOW_BATCH_SIZE);
+              await measureJob("sync-asin-shadow", void 0, () => this.runChildAsinShadowBatch(CHILD_ASIN_SHADOW_BATCH_SIZE));
             } catch {
             }
           }
@@ -225950,7 +225979,7 @@ var init_syncEngine = __esm2({
         this.textCatchupTimer = setInterval(async () => {
           if (this.state.autoUpdateEnabled && !this.state.isScanning && !this.auditRequested) {
             try {
-              await this.runQueuedTexts();
+              await measureJob("sync-text-catchup", void 0, () => this.runQueuedTexts());
             } catch (e) {
               this.addLog(`[Text-Catch-up] Fehler: ${e.message}`, "error");
             }
@@ -232184,9 +232213,11 @@ var init_updateMetadataService = __esm2({
     init_dist4();
     init_settingsService();
     init_queueService();
+    init_operationalMetrics();
     UpdateMetadataService = class {
       static RETRY_INTERVAL_MS = 5 * 60 * 1e3;
       static REQUEST_TIMEOUT_MS = 15e3;
+      static pendingRetry = null;
       static async markSuccessfulUpdate(designId, confirmedAt) {
         const settings = loadSettings();
         if (!settings.supabaseUrl || !settings.supabaseServiceRoleKey) {
@@ -232231,7 +232262,17 @@ var init_updateMetadataService = __esm2({
        * Retry only the metadata write for Amazon-confirmed update uploads.
        * This never starts or repeats an Amazon action.
        */
-      static async retryPendingConfirmedUpdates() {
+      static retryPendingConfirmedUpdates() {
+        if (this.pendingRetry) return this.pendingRetry;
+        const run = measureJob("update-metadata-retry", void 0, () => this.retryPendingConfirmedUpdatesExclusive());
+        this.pendingRetry = run;
+        void run.finally(() => {
+          if (this.pendingRetry === run) this.pendingRetry = null;
+        }).catch(() => {
+        });
+        return run;
+      }
+      static async retryPendingConfirmedUpdatesExclusive() {
         const now = Date.now();
         const items = QueueService.loadQueue().filter(
           (item) => isUpdateQueueItem(item) && item.uploadRecovery?.phase === "AMAZON_CONFIRMED" && item.uploadRecovery?.hubMetadataSync?.status !== "SUCCESS" && (!item.uploadRecovery?.hubMetadataSync?.attemptedAt || !Number.isFinite(Date.parse(item.uploadRecovery.hubMetadataSync.attemptedAt)) || now - Date.parse(item.uploadRecovery.hubMetadataSync.attemptedAt) >= this.RETRY_INTERVAL_MS)
@@ -241694,8 +241735,18 @@ var cachedStats = {
   royalties30dUsd: 0,
   hasSupabase: false
 };
+var statsRefreshInFlight = null;
 async function refreshStatsInBackground() {
   if (!isSystemReady) return;
+  if (statsRefreshInFlight) return statsRefreshInFlight;
+  statsRefreshInFlight = measureJob("stats-refresh", void 0, refreshStatsOnce);
+  try {
+    await statsRefreshInFlight;
+  } finally {
+    statsRefreshInFlight = null;
+  }
+}
+async function refreshStatsOnce() {
   try {
     const supabaseStats = await SupabaseService.getStats();
     const ratelimiter = await SyncEngine.fetchDashboardRatelimiter().catch(() => null);

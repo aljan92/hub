@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { loadSettings } from './settingsService';
 import { QueueItem, QueueService } from './queueService';
+import { measureJob } from './operationalMetrics';
 
 type SupabaseClientLike = {
   from(table: string): {
@@ -69,6 +70,7 @@ export async function writeSkipUpdateFlag(
 export class UpdateMetadataService {
   private static readonly RETRY_INTERVAL_MS = 5 * 60 * 1000;
   private static readonly REQUEST_TIMEOUT_MS = 15_000;
+  private static pendingRetry: Promise<{ attempted: number; succeeded: number }> | null = null;
 
   public static async markSuccessfulUpdate(designId: string, confirmedAt: string): Promise<{ success: boolean; error?: string }> {
     const settings = loadSettings();
@@ -117,7 +119,15 @@ export class UpdateMetadataService {
    * Retry only the metadata write for Amazon-confirmed update uploads.
    * This never starts or repeats an Amazon action.
    */
-  public static async retryPendingConfirmedUpdates(): Promise<{ attempted: number; succeeded: number }> {
+  public static retryPendingConfirmedUpdates(): Promise<{ attempted: number; succeeded: number }> {
+    if (this.pendingRetry) return this.pendingRetry;
+    const run = measureJob('update-metadata-retry', undefined, () => this.retryPendingConfirmedUpdatesExclusive());
+    this.pendingRetry = run;
+    void run.finally(() => { if (this.pendingRetry === run) this.pendingRetry = null; }).catch(() => {});
+    return run;
+  }
+
+  private static async retryPendingConfirmedUpdatesExclusive(): Promise<{ attempted: number; succeeded: number }> {
     const now = Date.now();
     const items = QueueService.loadQueue().filter(item =>
       isUpdateQueueItem(item)

@@ -5,6 +5,7 @@ import { SyncStateRepository, syncScope, WEEK_MS } from '../storage/syncStateRep
 import { SupabaseService } from './supabaseService';
 import { getSupabaseClient, loadSettings, saveSettings } from './settingsService';
 import { BrowserSessionService } from './browserSessionService';
+import { measureJob } from './operationalMetrics';
 import { atomicWriteFile, atomicWriteJson, loadJsonWithBackupRecovery, setFileFailSafe } from '../utils/atomicFileStorage';
 import { AmazonRetailIdentityService } from './amazonRetailIdentityService';
 import { redactSecrets, SyncHealthService, SyncWorkerName } from './syncHealthService';
@@ -515,7 +516,7 @@ export class SyncEngine {
       try { SyncHealthService.setScheduler(this.state.autoUpdateEnabled, { lastTickAt: new Date().toISOString() }); } catch {}
       if (this.state.autoUpdateEnabled && !this.state.isScanning && !this.auditRequested) {
         try {
-          await this.runSmartSync();
+          await measureJob('sync-smart', undefined, () => this.runSmartSync());
           const fullAt = this.currentScope ? this.store().state(this.currentScope).full_at : null;
           if (fullAt && Date.now() - fullAt >= WEEK_MS && Date.now() - this.weeklyAttemptAt >= 6 * 60 * 60 * 1000) {
             this.weeklyAttemptAt = Date.now();
@@ -532,13 +533,13 @@ export class SyncEngine {
     // with a short delay; keep concurrency at one and use a small bounded batch.
     this.asinResolveTimer = setInterval(async () => {
       if (this.state.autoUpdateEnabled && !this.state.isScanning && !this.auditRequested) {
-        try { await this.runChildAsinShadowBatch(CHILD_ASIN_SHADOW_BATCH_SIZE); } catch {}
+        try { await measureJob('sync-asin-shadow', undefined, () => this.runChildAsinShadowBatch(CHILD_ASIN_SHADOW_BATCH_SIZE)); } catch {}
       }
     }, CHILD_ASIN_SHADOW_INTERVAL_MS);
 
     this.textCatchupTimer = setInterval(async () => {
       if (this.state.autoUpdateEnabled && !this.state.isScanning && !this.auditRequested) {
-        try { await this.runQueuedTexts(); } catch (e: any) { this.addLog(`[Text-Catch-up] Fehler: ${e.message}`, 'error'); }
+        try { await measureJob('sync-text-catchup', undefined, () => this.runQueuedTexts()); } catch (e: any) { this.addLog(`[Text-Catch-up] Fehler: ${e.message}`, 'error'); }
       }
     }, 5 * 60 * 1000);
   }

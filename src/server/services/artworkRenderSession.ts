@@ -2,6 +2,7 @@ import { chromium, Page } from 'playwright';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { findChromiumExecutable } from './browserSessionService';
+import { measureJob } from './operationalMetrics';
 
 const execute = promisify(execFile);
 
@@ -28,6 +29,7 @@ export class ArtworkRenderSession {
     let release!: () => void;
     this.tail = new Promise<void>(resolve => { release = resolve; });
     await previous;
+    return measureJob('artwork-render', undefined, async () => {
     let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
     let server: Awaited<ReturnType<typeof chromium.launchServer>> | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -67,5 +69,6 @@ export class ArtworkRenderSession {
         }
       }
     }
+    });
   }
 }
