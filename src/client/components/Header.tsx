@@ -188,7 +188,7 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
             if (!statusResponse.ok) return;
             const status = await statusResponse.json();
             setUpdatePhase(status.phase);
-            if (['complete', 'unchanged', 'failed', 'rolled_back', 'rollback_failed'].includes(status.phase)) {
+            if (['complete', 'unchanged', 'failed', 'blocked', 'rolled_back', 'rollback_failed'].includes(status.phase)) {
               window.clearInterval(timer);
               setIsUpdating(false);
               if (status.phase === 'complete' || status.phase === 'unchanged') window.location.reload();

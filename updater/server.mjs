@@ -8,6 +8,7 @@ if (!token || token.length < 32) throw new Error('UPDATER_TOKEN must contain at 
 const image = process.env.APP_IMAGE || 'ghcr.io/aljan92/hub';
 const composeFile = process.env.COMPOSE_FILE || '/Volume1/docker/mba-hub/docker-compose.yml';
 const appUrl = process.env.APP_READY_URL || 'http://mba-hub:3000/api/ready';
+const appBusyUrl = process.env.APP_BUSY_URL || 'http://mba-hub:3000/api/v1/system/update/busy';
 const appContainer = process.env.APP_CONTAINER || 'mba_hub_app';
 const listenPort = Number(process.env.PORT || 3001);
 const imageTag = `${image}:main`;
@@ -54,19 +55,21 @@ async function waitForReady() {
   throw new Error('New app did not become ready within 300 seconds');
 }
 
+async function assertAppIdle() {
+  const response = await fetch(appBusyUrl, { signal: AbortSignal.timeout(5000) });
+  if (!response.ok) throw new Error(`Task status unavailable before restart: HTTP ${response.status}`);
+  const status = await response.json();
+  if (status.busy !== false) throw new Error('A task or upload became active before restart');
+}
+
 async function applyUpdate() {
   let rollbackPrepared = false;
+  let replacementStarted = false;
   try {
-    state.phase = 'backing_up';
-    // The currently running container may have been modified by the legacy update button.
-    // Commit its writable layer once before Compose replaces it.
-    await docker('commit', appContainer, rollbackTag);
-    rollbackPrepared = true;
-
     state.phase = 'pulling';
     await docker('pull', imageTag);
     const newImageId = await docker('image', 'inspect', '--format', '{{.Id}}', imageTag);
-    const oldImageId = await docker('image', 'inspect', '--format', '{{.Id}}', rollbackTag);
+    const oldImageId = await docker('inspect', '--format', '{{.Image}}', appContainer);
     state.image = newImageId;
     if (newImageId === oldImageId) {
       state.phase = 'unchanged';
@@ -74,7 +77,14 @@ async function applyUpdate() {
       return;
     }
 
+    await assertAppIdle();
+    state.phase = 'backing_up';
+    // Commit protects the first migration from the legacy self-modified container.
+    await docker('commit', appContainer, rollbackTag);
+    rollbackPrepared = true;
+    await assertAppIdle();
     state.phase = 'recreating';
+    replacementStarted = true;
     await compose('up', '-d', '--no-deps', '--force-recreate', '--pull', 'never', 'mba-hub');
     state.phase = 'verifying';
     await waitForReady();
@@ -84,7 +94,7 @@ async function applyUpdate() {
     const reason = error instanceof Error ? error.message : String(error);
     state.phase = 'failed';
     state.error = reason.slice(0, 500);
-    if (rollbackPrepared) {
+    if (rollbackPrepared && replacementStarted) {
       try {
         state.phase = 'rolling_back';
         await docker('tag', rollbackTag, imageTag);
@@ -96,6 +106,7 @@ async function applyUpdate() {
         state.error = `${state.error}; rollback: ${String(rollbackError)}`.slice(0, 500);
       }
     }
+    if (rollbackPrepared && !replacementStarted) state.phase = 'blocked';
     state.finishedAt = new Date().toISOString();
   }
 }

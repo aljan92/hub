@@ -9,9 +9,9 @@ const root = mkdtempSync(join(tmpdir(), 'mba-updater-test-'));
 const dockerPath = join(root, 'docker');
 const token = 'test-updater-token-with-at-least-32-characters';
 const port = 40000 + Math.floor(Math.random() * 15000);
-const readyServer = createServer((_req, res) => {
+const readyServer = createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify({ ready: true }));
+  res.end(JSON.stringify(req.url === '/busy' ? { busy: false } : { ready: true }));
 });
 await new Promise(resolve => readyServer.listen(0, '127.0.0.1', resolve));
 const readyPort = readyServer.address().port;
@@ -20,6 +20,9 @@ writeFileSync(dockerPath, `#!/bin/sh
 case "$1" in
   commit) sleep 0.1; exit 0 ;;
   pull|tag) exit 0 ;;
+  inspect)
+    if [ -f "$SAME_IMAGE" ]; then echo sha256:new; else echo sha256:old; fi
+    exit 0 ;;
   image)
     case "$*" in *rollback-local*) echo sha256:old ;; *) echo sha256:new ;; esac
     exit 0 ;;
@@ -37,6 +40,8 @@ const child = spawn(process.execPath, [resolve('updater/server.mjs')], {
     UPDATER_TOKEN: token,
     PORT: String(port),
     APP_READY_URL: `http://127.0.0.1:${readyPort}/ready`,
+    APP_BUSY_URL: `http://127.0.0.1:${readyPort}/busy`,
+    SAME_IMAGE: join(root, 'same-image'),
     FAIL_ONCE: join(root, 'fail-once')
   },
   stdio: 'ignore'
@@ -72,7 +77,10 @@ try {
   assert.equal((await request('/apply', 'POST')).status, 202);
   const rollback = await statusUntil(['rolled_back', 'rollback_failed']);
   assert.equal(rollback.phase, 'rolled_back');
-  console.log('Updater authorization, serialization, successful apply and rollback verified.');
+  writeFileSync(join(root, 'same-image'), '1');
+  assert.equal((await request('/apply', 'POST')).status, 202);
+  assert.equal((await statusUntil(['unchanged'])).phase, 'unchanged');
+  console.log('Updater authorization, serialization, successful apply, rollback and no-op verified.');
 } finally {
   child.kill('SIGTERM');
   await new Promise(resolve => child.once('exit', resolve));

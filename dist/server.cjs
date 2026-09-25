@@ -241237,7 +241237,7 @@ app.use(import_express.default.urlencoded({ extended: true, limit: "50mb" }));
 app.use(recordHttpRequest);
 app.use((req, res, next) => {
   if (isSystemReady) return next();
-  if (!req.path.startsWith("/api/v1/") || ["/api/v1/system/update", "/api/v1/system/update/status", "/api/v1/system/metrics"].includes(req.path)) {
+  if (!req.path.startsWith("/api/v1/") || ["/api/v1/system/update", "/api/v1/system/update/status", "/api/v1/system/update/busy", "/api/v1/system/metrics"].includes(req.path)) {
     return next();
   }
   return res.status(503).json({
@@ -241648,6 +241648,11 @@ app.get("/api/v1/system/update/status", async (_req, res) => {
   } catch (error) {
     res.status(503).json({ error: error.message || "Updater nicht erreichbar" });
   }
+});
+app.get("/api/v1/system/update/busy", (_req, res) => {
+  const activeTaskId = PipelineExecutionCoordinator.getSnapshot().activeTaskId;
+  const activeUpload = UploadWorkerService.getStatus().isUploading;
+  res.json({ busy: !!(activeTaskId || activeUpload), activeTaskId, activeUpload });
 });
 app.post("/api/v1/system/update", async (req, res) => {
   const activeTaskId = PipelineExecutionCoordinator.getSnapshot().activeTaskId;
