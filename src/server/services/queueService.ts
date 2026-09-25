@@ -290,6 +290,13 @@ export class QueueService {
     return this.items.filter(i => i.status === 'WAITING' || i.status === 'UPLOADING').length;
   }
 
+  /** Read-only view of the process-owned queue for counters; avoids reloading the
+   * full JSON file on every dashboard poll. Callers must not mutate the items. */
+  public static getLoadedItems(): ReadonlyArray<QueueItem> {
+    this.ensureLoaded();
+    return this.items;
+  }
+
   /**
    * Enrich items with full multi-language listings from tasks_log.json if missing
    */

@@ -223688,6 +223688,12 @@ var init_queueService = __esm2({
         this.ensureLoaded();
         return this.items.filter((i) => i.status === "WAITING" || i.status === "UPLOADING").length;
       }
+      /** Read-only view of the process-owned queue for counters; avoids reloading the
+       * full JSON file on every dashboard poll. Callers must not mutate the items. */
+      static getLoadedItems() {
+        this.ensureLoaded();
+        return this.items;
+      }
       /**
        * Enrich items with full multi-language listings from tasks_log.json if missing
        */
@@ -232626,7 +232632,7 @@ var init_updateBackfillService = __esm2({
        * (Prevents double counting designs that exist in both Queue and Tasks)
        */
       static getActiveUpdateCount() {
-        const queueItems = QueueService.loadQueue();
+        const queueItems = QueueService.getLoadedItems();
         const isUpdateItem = (i) => i.type === "UPDATE" || i.type === "update" || i.source === "UPDATE" || i.id && String(i.id).startsWith("update_") || i.taskId && String(i.taskId).endsWith("-U");
         const activeQueueItems = queueItems.filter((i) => isUpdateItem(i) && i.status !== "COMPLETED" && i.status !== "ERROR");
         const activeTasksReview = TaskLogService.getActiveReviewUpdateTasks();

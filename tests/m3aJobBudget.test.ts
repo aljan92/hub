@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { getOperationalMetrics, measureJob } from '../src/server/services/operationalMetrics';
 import { UpdateMetadataService } from '../src/server/services/updateMetadataService';
 import { QueueService } from '../src/server/services/queueService';
+import { UpdateBackfillService } from '../src/server/services/updateBackfillService';
+import { TaskLogService } from '../src/server/services/taskLogService';
+import { TaskRecoveryService } from '../src/server/services/taskRecoveryService';
 
 let release!: () => void;
 const held = new Promise<void>(resolve => { release = resolve; });
@@ -48,4 +51,25 @@ try {
   assert.equal(rebalances, 2, 'unchanged live planning inputs do not rewrite the queue');
 } finally {
   QueueService.rebalanceQueue = originalRebalance;
+}
+
+const originalLoadedItems = QueueService.getLoadedItems;
+const originalReviews = TaskLogService.getActiveReviewUpdateTasks;
+const originalReserved = TaskRecoveryService.getReservedDesignIds;
+try {
+  QueueService.loadQueue = (() => { throw new Error('count must not reread queue JSON'); }) as typeof QueueService.loadQueue;
+  QueueService.getLoadedItems = (() => [
+    { id: 'one', taskId: '#one-U', designId: 'one', status: 'WAITING', type: 'update' },
+    { id: 'two', taskId: '#two-U', designId: 'two', status: 'COMPLETED', type: 'update' }
+  ]) as typeof QueueService.getLoadedItems;
+  TaskLogService.getActiveReviewUpdateTasks = () => [{ id: '#one-U', designId: 'one' }];
+  TaskRecoveryService.getReservedDesignIds = () => [];
+  const count = UpdateBackfillService.getActiveUpdateCount();
+  assert.equal(count.queueCount, 1);
+  assert.equal(count.currentCount, 1, 'review and queue entry refer to one design');
+} finally {
+  QueueService.loadQueue = originalLoadQueue;
+  QueueService.getLoadedItems = originalLoadedItems;
+  TaskLogService.getActiveReviewUpdateTasks = originalReviews;
+  TaskRecoveryService.getReservedDesignIds = originalReserved;
 }

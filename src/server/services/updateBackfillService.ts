@@ -394,7 +394,7 @@ export class UpdateBackfillService {
    * (Prevents double counting designs that exist in both Queue and Tasks)
    */
   public static getActiveUpdateCount(): { currentCount: number; queueCount: number; tasksReviewCount: number; inFlightCount: number } {
-    const queueItems = QueueService.loadQueue();
+    const queueItems = QueueService.getLoadedItems();
     const isUpdateItem = (i: any) => (i.type === 'UPDATE' || i.type === 'update' || i.source === 'UPDATE' || (i.id && String(i.id).startsWith('update_')) || (i.taskId && String(i.taskId).endsWith('-U')));
     const activeQueueItems = queueItems.filter(i => isUpdateItem(i) && i.status !== 'COMPLETED' && i.status !== 'ERROR');
 
