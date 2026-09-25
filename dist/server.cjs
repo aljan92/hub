@@ -243353,8 +243353,8 @@ app.post(["/api/v1/mcp/trademark/check", "/api/v1/trademark/check", "/api/v1/mcp
 });
 app.get("/api/v1/queue", (req, res) => {
   try {
-    const state = QueueService.getState();
-    res.json({ success: true, ...state });
+    const state = measureOperation("queue.getState", () => QueueService.getState());
+    measureOperation("queue.jsonResponse", () => res.json({ success: true, ...state }));
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

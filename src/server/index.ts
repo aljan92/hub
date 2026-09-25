@@ -45,7 +45,7 @@ import { DesignerService } from './services/designerService';
 import { DesignerConceptService } from './services/designerConceptService';
 import { AmazonDeleteDesignService } from './services/amazonDeleteDesignService';
 import { CleanupService } from './services/cleanupService';
-import { getOperationalMetrics, measureJob, recordHttpRequest } from './services/operationalMetrics';
+import { getOperationalMetrics, measureJob, measureOperation, recordHttpRequest } from './services/operationalMetrics';
 import { PipelineExecutionCoordinator } from './services/pipelineExecutionCoordinator';
 
 dotenv.config();
@@ -2172,8 +2172,8 @@ app.post(['/api/v1/mcp/trademark/check', '/api/v1/trademark/check', '/api/v1/mcp
 // 11. Intelligent Upload Queue & Slot Balancing API
 app.get('/api/v1/queue', (req, res) => {
   try {
-    const state = QueueService.getState();
-    res.json({ success: true, ...state });
+    const state = measureOperation('queue.getState', () => QueueService.getState());
+    measureOperation('queue.jsonResponse', () => res.json({ success: true, ...state }));
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
