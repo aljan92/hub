@@ -10,6 +10,7 @@ type ModelItem = { id: string; name?: string };
 
 interface GeneratedConceptItem {
   id: string;
+  requestId: string;
   niche1: string;
   niche2?: string;
   subniche?: string;
@@ -21,6 +22,12 @@ interface GeneratedConceptItem {
 }
 
 const HISTORY_KEY = 'mba_designer_suggestion_history_v1';
+const START_REQUEST_KEY = 'mba_designer_pending_start_v1';
+const requestFingerprint = (value: string): string => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619);
+  return (hash >>> 0).toString(16);
+};
 const emptyHistory = (): SuggestionHistory => ({ niche1: [], niche2: [], subniche: [], quote: [], style: [] });
 const STYLE_PRESETS = [
   'Vintage distressed 1970s illustration with bold retro typography',
@@ -73,6 +80,7 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
 
   const providerSettingsLoaded = useRef(false);
   const generationInFlight = useRef(false);
+  const pendingStart = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const historyRef = useRef<SuggestionHistory>(readHistory());
 
   useEffect(() => {
@@ -118,6 +126,7 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
       }
       const newItems: GeneratedConceptItem[] = data.concepts.map((c: any, index: number) => ({
         id: `concept_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+        requestId: globalThis.crypto?.randomUUID?.() || `concept_${Date.now()}_${index}_${Math.random().toString(36).slice(2)}`,
         niche1: c.niche1 || '',
         niche2: c.niche2 || '',
         subniche: c.subniche || '',
@@ -162,7 +171,8 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
           style: item.style || '',
           customInstruction: item.customInstruction || '',
           imageProvider,
-          promptPoolEnabled
+          promptPoolEnabled,
+          requestId: item.requestId
         })
       });
       const data = await response.json();
@@ -193,6 +203,7 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           concepts: pending.map(c => ({
+            requestId: c.requestId,
             niche1: c.niche1,
             niche2: c.niche2 || '',
             subniche: c.subniche || '',
@@ -307,7 +318,17 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
     setIsGenerating(true);
     setFormError('');
     setCreatedTaskId('');
-    const requestId = globalThis.crypto?.randomUUID?.() || `designer_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const fingerprint = requestFingerprint(JSON.stringify({ ...values, customInstruction, imageProvider, promptPoolEnabled }));
+    let pending = pendingStart.current;
+    if (!pending) {
+      try { pending = JSON.parse(sessionStorage.getItem(START_REQUEST_KEY) || 'null'); } catch { pending = null; }
+    }
+    if (!pending || pending.fingerprint !== fingerprint) {
+      pending = { fingerprint, requestId: globalThis.crypto?.randomUUID?.() || `designer_${Date.now()}_${Math.random().toString(36).slice(2)}` };
+    }
+    pendingStart.current = pending;
+    try { sessionStorage.setItem(START_REQUEST_KEY, JSON.stringify(pending)); } catch {}
+    const requestId = pending.requestId;
     try {
       const response = await fetch('/api/v1/designer/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -317,6 +338,8 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
       if (!response.ok || !data.success || !data.taskId) throw new Error(data.error || 'Task konnte nicht angelegt werden.');
       clearHistory();
       setCreatedTaskId(data.taskId);
+      pendingStart.current = null;
+      try { sessionStorage.removeItem(START_REQUEST_KEY); } catch {}
     } catch (error: any) {
       setFormError(error?.message || 'Task konnte nicht angelegt werden.');
     } finally {
@@ -325,18 +348,14 @@ export const DesignerView: React.FC<{ onNavigateTab?: (tab: ActiveTab) => void }
     }
   };
 
-  const gptModel = providerSettings.gptImageModel || 'openai/gpt-image-2.5-sunburst';
-  const isGpt25 = gptModel === 'openai/gpt-image-2.5-sunburst';
-  const gpt25Bg = providerSettings.gptImage25Background || providerSettings.gptImageBackground || 'transparent';
+  const gpt25Bg = providerSettings.gptImage25Background || 'transparent';
   const gpt25BgLabel = gpt25Bg === 'deep_blue'
     ? 'FREISTELLUNG (DEEP BLUE)'
     : gpt25Bg === 'transparent'
     ? 'TRANSPARENT (NATIV)'
     : String(gpt25Bg).toUpperCase();
 
-  const gptEffectiveSettings = isGpt25
-    ? `2.5 Sunburst · ${String(providerSettings.gptImage25Quality || providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImage25AspectRatio || providerSettings.gptImageAspectRatio || '3:4'} · ${gpt25BgLabel}`
-    : `2.0 · ${String(providerSettings.gptImageQuality || 'high').toUpperCase()} · ${providerSettings.gptImageAspectRatio || '3:4'} · ${providerSettings.gptImageBackground === 'transparent' || providerSettings.gptImageBackground === 'deep_blue' ? 'FREISTELLUNG (DEEP BLUE)' : String(providerSettings.gptImageBackground || 'opaque').toUpperCase()}`;
+  const gptEffectiveSettings = `2.5 Sunburst · ${String(providerSettings.gptImage25Quality || 'high').toUpperCase()} · ${providerSettings.gptImage25AspectRatio || '3:4'} · ${gpt25BgLabel}`;
 
   const effectiveSettings = imageProvider === 'GPT_IMAGE_2'
     ? gptEffectiveSettings

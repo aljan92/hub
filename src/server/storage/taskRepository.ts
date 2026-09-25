@@ -169,6 +169,13 @@ export class TaskRepository {
         payload_json TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS designer_requests (
+        request_id TEXT PRIMARY KEY,
+        input_hash TEXT NOT NULL,
+        task_id TEXT NOT NULL REFERENCES tasks(id),
+        created_at TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_tasks_counter ON tasks(counter DESC);
       CREATE INDEX IF NOT EXISTS idx_tasks_source_counter ON tasks(source, counter DESC);
       CREATE INDEX IF NOT EXISTS idx_tasks_status_counter ON tasks(status, counter DESC);
@@ -204,8 +211,13 @@ export class TaskRepository {
     let openRouterCost = 0;
 
     if (Array.isArray(task.events)) {
+      let pendingV3Responses = 0;
       for (const ev of task.events) {
-        if (ev.type === 'IDEOGRAM_RESPONSE' && ev.content?.provider !== 'GPT_IMAGE_2') imageGenCount++;
+        if (ev.type === 'IMAGE_PROVIDER_READY') { imageGenCount++; pendingV3Responses++; }
+        if (ev.type === 'IDEOGRAM_RESPONSE' && ev.content?.provider !== 'GPT_IMAGE_2') {
+          if (ev.content?.provider === 'IDEOGRAM' && pendingV3Responses > 0) pendingV3Responses--;
+          else imageGenCount++;
+        }
         if (ev.type === 'VECTORIZE_RESPONSE') vectorCount++;
         if (ev.metadata?.costUsd) openRouterCost += Number(ev.metadata.costUsd) || 0;
       }
@@ -489,7 +501,13 @@ export class TaskRepository {
   /**
    * Inserts a new task atomically.
    */
-  public static createTask(task: DesignTaskLog): DesignTaskLog {
+  public static findDesignerRequest(requestId: string): { task: DesignTaskLog; inputHash: string } | null {
+    const db = this.getDb();
+    const row: any = db.prepare(`SELECT r.input_hash, t.payload_json FROM designer_requests r JOIN tasks t ON t.id = r.task_id WHERE r.request_id = ?`).get(requestId);
+    return row ? { task: JSON.parse(row.payload_json) as DesignTaskLog, inputHash: row.input_hash } : null;
+  }
+
+  public static createTask(task: DesignTaskLog, request?: { id: string; inputHash: string }): DesignTaskLog {
     const db = this.getDb();
     db.exec('BEGIN IMMEDIATE;');
     try {
@@ -538,6 +556,11 @@ export class TaskRepository {
         cols.events_count, cols.client_ip, cols.image_generations_count, cols.vectorizations_count,
         cols.openrouter_cost_usd, cols.payload_json
       );
+
+      if (request) {
+        db.prepare('INSERT INTO designer_requests (request_id, input_hash, task_id, created_at) VALUES (?, ?, ?, ?)')
+          .run(request.id, request.inputHash, task.id, task.receivedAt);
+      }
 
       db.exec('COMMIT;');
       return task;

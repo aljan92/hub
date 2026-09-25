@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { randomInt } from 'node:crypto';
 import { LLMService } from './llmService';
 import { loadSettings } from './settingsService';
 
@@ -18,6 +19,8 @@ export interface DesignerConceptHistoryItem {
   subniche?: string;
   quote: string;
   timestamp: number;
+  source?: 'random';
+  family?: string;
 }
 
 export interface GenerateConceptsOptions {
@@ -27,8 +30,50 @@ export interface GenerateConceptsOptions {
 }
 
 export class DesignerConceptService {
-  private static readonly HISTORY_FILE = path.resolve(process.cwd(), 'data/designer_concept_history.json');
+  // The former file mixed random suggestions with user-directed ideas and cannot be classified safely.
+  private static readonly HISTORY_FILE = path.resolve(process.cwd(), 'data/designer_random_concept_history.json');
   private static readonly MAX_HISTORY_ITEMS = 100;
+  private static readonly RANDOM_FAMILIES = [
+    'outdoor activities', 'music and performing arts', 'science and astronomy',
+    'crafts and creative hobbies', 'food and cooking', 'travel and places',
+    'sports and fitness', 'gardening and nature', 'family occasions',
+    'animal interests', 'skilled trades', 'technology and gaming'
+  ];
+
+  private static pickRandomFamilies(count: number, history: DesignerConceptHistoryItem[]): string[] {
+    const recent = history.filter(item => item.source === 'random' && item.family).slice(-40);
+    const lastSeen = new Map<string, number>();
+    recent.forEach((item, index) => lastSeen.set(item.family!, index));
+    const candidates = [...this.RANDOM_FAMILIES];
+    const selected: string[] = [];
+    while (selected.length < count) {
+      const oldest = Math.min(...candidates.map(family => lastSeen.get(family) ?? -1));
+      const tied = candidates.filter(family => (lastSeen.get(family) ?? -1) === oldest);
+      const family = tied[randomInt(tied.length)];
+      selected.push(family);
+      candidates.splice(candidates.indexOf(family), 1);
+      if (candidates.length === 0) candidates.push(...this.RANDOM_FAMILIES);
+    }
+    return selected;
+  }
+
+  private static conceptKey(value: string): string {
+    return value.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  private static hasRecentDuplicate(concepts: DesignerConcept[], history: DesignerConceptHistoryItem[]): boolean {
+    const recent = history.filter(item => item.source === 'random').slice(-40);
+    const niches = new Set(recent.map(item => this.conceptKey(item.niche1)));
+    const quotes = new Set(recent.map(item => this.conceptKey(item.quote)));
+    for (const concept of concepts) {
+      const niche = this.conceptKey(concept.niche1);
+      const quote = this.conceptKey(concept.quote);
+      if (niches.has(niche) || quotes.has(quote)) return true;
+      niches.add(niche);
+      quotes.add(quote);
+    }
+    return false;
+  }
 
   /**
    * Extracts the intended concept count from natural language text or requested count.
@@ -109,18 +154,20 @@ export class DesignerConceptService {
   /**
    * Records newly generated concepts to the persistent history (rolling last 100 items).
    */
-  public static recordConcepts(concepts: DesignerConcept[]): void {
+  public static recordConcepts(concepts: DesignerConcept[], families: string[] = []): void {
     if (!concepts || concepts.length === 0) return;
     try {
       const history = this.loadHistory();
       const now = Date.now();
-      for (const concept of concepts) {
+      for (const [index, concept] of concepts.entries()) {
         if (!concept.niche1 || !concept.quote) continue;
         history.push({
           niche1: concept.niche1,
           subniche: concept.subniche || undefined,
           quote: concept.quote,
-          timestamp: now
+          timestamp: now,
+          source: 'random',
+          family: families[index]
         });
       }
       const trimmed = history.slice(-this.MAX_HISTORY_ITEMS);
@@ -148,7 +195,7 @@ export class DesignerConceptService {
    */
   public static getAvoidanceList(limit = 40): string[] {
     const history = this.loadHistory();
-    const recent = history.slice(-limit);
+    const recent = history.filter(item => item.source === 'random').slice(-limit);
     return recent.map(item => {
       const sub = item.subniche ? ` (${item.subniche})` : '';
       return `${item.niche1}${sub}: "${item.quote}"`;
@@ -166,22 +213,33 @@ export class DesignerConceptService {
     const count = this.extractConceptCount(options.prompt, options.count, Boolean(options.random));
     const settings = loadSettings();
     const model = LLMService.normalizeModelId(settings.llmModel);
-    const avoidanceList = this.getAvoidanceList(40);
-
     const isRandom = Boolean(options.random) || !options.prompt?.trim();
+    const history = isRandom ? this.loadHistory() : [];
+    const families = isRandom ? this.pickRandomFamilies(count, history) : [];
+    const avoidanceList = isRandom ? this.getAvoidanceList(40) : [];
     const userPrompt = isRandom
-      ? `Generate ${count} completely fresh, creative, top-converting commercial apparel design concept(s). Choose distinct broad high-volume evergreen niches.`
+      ? `Generate ${count} fresh commercial apparel concept(s). Use these distinct theme families in order: ${families.map((family, index) => `${index + 1}: ${family}`).join('; ')}. Do not default to pets, jobs or birthdays unless their family is explicitly assigned. Each concept must use its assigned family and a different primary niche.`
       : `User Request: "${options.prompt!.trim()}"\n\nGenerate exactly ${count} distinctive commercial apparel design concept(s) fulfilling this request.`;
 
-    const concepts = await LLMService.generateDesignerConcepts({
+    let concepts = await LLMService.generateDesignerConcepts({
       userPrompt,
       count,
       model,
       avoidanceList
     });
 
-    // Record to history
-    this.recordConcepts(concepts);
+    if (isRandom && (concepts.length !== count || this.hasRecentDuplicate(concepts, history))) {
+      concepts = await LLMService.generateDesignerConcepts({
+        userPrompt: `${userPrompt}\n\nThe prior response was incomplete or repeated a recent niche or slogan. Return exactly ${count} different concepts with different niches and slogans.`,
+        count,
+        model,
+        avoidanceList
+      });
+      if (concepts.length !== count || this.hasRecentDuplicate(concepts, history)) throw new Error('Zufallskonzepte sind unvollständig oder wiederholen zuletzt verwendete Nischen oder Slogans. Bitte erneut versuchen.');
+    }
+
+    // User-directed ideas are never written to the random concept history.
+    if (isRandom) this.recordConcepts(concepts, families);
 
     return {
       concepts,

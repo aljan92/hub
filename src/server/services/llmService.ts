@@ -1536,12 +1536,7 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
     const systemPrompt = `You are a world-class Print-on-Demand (POD) Merch by Amazon Art Director and Bestseller Niche Strategist.
 
 Your goal is to generate commercially viable, highly sellable, authentic T-shirt design concepts.
-When choosing broad niches or generating random ideas, focus on high-demand categories such as:
-- evergreen
-- Berufe
-- Haustiere mit beliebten Rassen
-- Hobbys & Sport
-- Familie/Lifestyle
+When generating random ideas, follow the theme families assigned in the user message. Vary the primary niche and slogan across concepts. Do not default to one popular category. For user-directed ideas, follow the requested topic rather than a category list.
 
 IMPORTANT FIELD RULES:
 1. "niche1" (REQUIRED): The primary broad niche in English (1-3 words).
@@ -1892,4 +1887,3 @@ Rewrite ONLY the field "${params.field}".`;
     }
   }
 }
-

@@ -4,6 +4,10 @@ import { IdeogramV4Service } from '../src/server/services/ideogramV4Service';
 import { resolveImageProvider } from '../src/server/services/settingsService';
 import { DesignerService } from '../src/server/services/designerService';
 import { TaskLogService } from '../src/server/services/taskLogService';
+import { TaskRepository } from '../src/server/storage/taskRepository';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 test('resolveImageProvider correctly resolves IDEOGRAM_V4', () => {
   assert.equal(resolveImageProvider('IDEOGRAM_V4', 'IDEOGRAM'), 'IDEOGRAM_V4');
@@ -138,6 +142,11 @@ test('IdeogramV4Service Magic Prompt endpoint and image generation contract', as
 });
 
 test('TaskLogService snapshot includes Ideogram 4.0 parameters', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mba-v4-snapshot-'));
+  const originalProcess = TaskLogService.processTaskWithOpenRouter;
+  (TaskLogService as any).processTaskWithOpenRouter = () => Promise.resolve();
+  TaskRepository.init(path.join(dir, 'tasks.sqlite'));
+  try {
   const task = TaskLogService.createTaskLog({
     source: 'D2',
     payload: {
@@ -152,6 +161,11 @@ test('TaskLogService snapshot includes Ideogram 4.0 parameters', () => {
   assert.ok(task.imageGeneration?.aspectRatio);
   assert.equal(task.imageGeneration?.transparent, true);
   assert.equal(typeof task.imageGeneration?.transparent, 'boolean');
+  } finally {
+    (TaskLogService as any).processTaskWithOpenRouter = originalProcess;
+    TaskRepository.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('IdeogramV4Service.mapAspectRatioToResolution produces valid Ideogram enum values', () => {

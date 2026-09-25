@@ -12,7 +12,7 @@ export interface ImageGenerationSnapshot {
   renderingSpeed?: string;
   style?: string;
   magicPrompt?: string | boolean;
-  quality?: 'auto' | 'low' | 'medium' | 'high';
+  quality?: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   background?: 'auto' | 'opaque' | 'transparent' | 'deep_blue';
   transparent?: boolean;
   outputResolution?: string;
@@ -93,6 +93,7 @@ export type EventType =
   | 'LLM_REQUEST'
   | 'LLM_RESPONSE'
   | 'IDEOGRAM_REQUEST'
+  | 'IMAGE_PROVIDER_READY'
   | 'IDEOGRAM_RESPONSE'
   | 'ANALYSIS_REQUEST'
   | 'ANALYSIS_RESPONSE'
@@ -175,6 +176,13 @@ export interface DesignTaskLog {
   eventsCount?: number;
   payload: Record<string, any>;
   imageGeneration?: ImageGenerationSnapshot;
+  pendingImageDownload?: { url: string; prompt: string; model: string; provider: 'IDEOGRAM' };
+  d2Snapshot?: {
+    provider: 'openai' | 'openrouter';
+    model: string;
+    systemPrompt: string;
+    promptVersion: string;
+  };
   promptPool?: PromptPoolSnapshot;
   events: SessionEvent[];
   niche1?: string;

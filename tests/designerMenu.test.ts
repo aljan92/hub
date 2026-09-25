@@ -6,6 +6,7 @@ import test from 'node:test';
 import { DesignerService } from '../src/server/services/designerService';
 import { LLMService } from '../src/server/services/llmService';
 import { TaskLogService } from '../src/server/services/taskLogService';
+import { TaskRepository } from '../src/server/storage/taskRepository';
 
 test('designer values preserve the exact D2 field contract and require niche1', () => {
   assert.deepEqual(DesignerService.normalizeValues({
@@ -96,7 +97,11 @@ test('invalid long niche is retried and never reaches the form', async () => {
 
 test('designer task creation is idempotent and sends no precomputed prompt around D2', () => {
   const original = TaskLogService.createTaskLog;
+  const originalFind = TaskRepository.findDesignerRequest;
   const calls: any[] = [];
+  (TaskRepository as any).findDesignerRequest = (id: string) => calls.length && id === 'designer_request_123'
+    ? { task: { id: '#999-D' }, inputHash: calls[0].requestIdentity.inputHash }
+    : null;
   (TaskLogService as any).createTaskLog = (params: any) => {
     calls.push(params);
     return { id: '#999-D', source: params.source, payload: params.payload };
@@ -120,11 +125,14 @@ test('designer task creation is idempotent and sends no precomputed prompt aroun
     assert.equal('prompt' in calls[0].payload, false);
   } finally {
     (TaskLogService as any).createTaskLog = original;
+    (TaskRepository as any).findDesignerRequest = originalFind;
   }
 });
 
 test('designer task creation preserves customInstruction in payload for single and batch creation', () => {
   const original = TaskLogService.createTaskLog;
+  const originalFind = TaskRepository.findDesignerRequest;
+  (TaskRepository as any).findDesignerRequest = () => null;
   const calls: any[] = [];
   (TaskLogService as any).createTaskLog = (params: any) => {
     calls.push(params);
@@ -164,6 +172,7 @@ test('designer task creation preserves customInstruction in payload for single a
     assert.equal(calls[2].payload.customInstruction, '');
   } finally {
     (TaskLogService as any).createTaskLog = original;
+    (TaskRepository as any).findDesignerRequest = originalFind;
   }
 });
 

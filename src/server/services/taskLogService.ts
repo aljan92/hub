@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { loadSettings, resolveImageProvider, getEffectiveGptImageSettings } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
-import { IdeogramService } from './ideogramService';
+import { IdeogramService, ExpiredIdeogramImageError } from './ideogramService';
 import { IdeogramV4Service } from './ideogramV4Service';
 import { OpenRouterImageService } from './openRouterImageService';
 import { TrademarkService } from './trademarkService';
@@ -45,6 +45,27 @@ import {
 export class TaskLogService {
   private static dataDir = path.resolve(process.cwd(), 'data');
   private static eventBroadcaster: ((type: string, payload: any) => void) | null = null;
+
+  private static buildD2SystemPrompt(imageGeneration: ImageGenerationSnapshot | undefined, basePrompt: string): string {
+    const isGptImage = imageGeneration?.provider === 'GPT_IMAGE_2';
+    const isGptImage25 = isGptImage && imageGeneration?.model === 'openai/gpt-image-2.5-sunburst';
+    const bgMode = imageGeneration?.background || (isGptImage25 ? 'transparent' : 'deep_blue');
+    const chromaKeyDirective = (modelName: string) => `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): ${modelName}. Create a prompt specifically for ${modelName}. Background mode: ${bgMode}. Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement.`;
+    const providerDirective = isGptImage25
+      ? (bgMode === 'deep_blue'
+          ? chromaKeyDirective('OpenAI GPT Image 2.5 Sunburst')
+          : bgMode === 'transparent'
+          ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: transparent. Ensure the artwork is completely isolated with a clean transparent background. Do not generate background scenery, frames, product mockups, checkerboard patterns, or extra solid backdrops.`
+          : `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: opaque. Keep the artwork isolated and free of product mockups or scenes.`)
+      : isGptImage
+      ? (bgMode === 'opaque'
+          ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: opaque. Keep the artwork isolated and free of product mockups or scenes.`
+          : chromaKeyDirective('OpenAI GPT Image 2'))
+      : imageGeneration?.provider === 'IDEOGRAM_V4'
+      ? '\n\nCURRENT IMAGE PROVIDER: Ideogram 4.0. Preserve the established Ideogram-compatible prompt style tailored for high detail, typography accuracy and photorealistic or illustrative graphics.'
+      : '\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.';
+    return basePrompt + providerDirective;
+  }
 
   static setBroadcaster(fn: (type: string, payload: any) => void) {
     this.eventBroadcaster = fn;
@@ -148,6 +169,7 @@ export class TaskLogService {
     clientIp?: string;
     hasError?: boolean;
     errorDetails?: string;
+    requestIdentity?: { id: string; inputHash: string };
   }): DesignTaskLog {
     const counter = this.getNextCounter();
     const suffix = this.getSuffixForSource(params.source);
@@ -199,6 +221,12 @@ export class TaskLogService {
           })
         : []
     };
+    const d2Snapshot = params.source === 'UPDATE' ? undefined : {
+      provider: settings.llmProvider === 'openai' ? 'openai' as const : 'openrouter' as const,
+      model: settings.llmModel || 'anthropic/claude-3-5-sonnet',
+      systemPrompt: this.buildD2SystemPrompt(imageGeneration, SystemPromptService.getPromptGeneratorPrompt()),
+      promptVersion: 'm4-v1'
+    };
 
     const incomingTitle = params.source === 'HERMES' 
       ? 'Eingang von Hermes' 
@@ -229,13 +257,14 @@ export class TaskLogService {
       hermesKeywords: params.payload?.hermesKeywords || (Array.isArray(params.payload?.keywords) ? params.payload.keywords : undefined),
       payload: params.payload || {},
       imageGeneration,
+      d2Snapshot,
       promptPool,
       events: [initialEvent],
       hasError: Boolean(params.hasError),
       errorDetails: params.errorDetails
     };
 
-    const created = TaskRepository.createTask(taskLog);
+    const created = TaskRepository.createTask(taskLog, params.requestIdentity);
     console.log(`[TaskLogService] 📋 Task ${created.id} registriert (${created.source}) von ${created.clientIp || 'local'}`);
     this.emitUpdate(created);
 
@@ -424,8 +453,9 @@ export class TaskLogService {
 
     const settings = loadSettings();
     const apiKey = (settings.openRouterApiKey || '').trim();
-    const model = settings.llmModel || 'anthropic/claude-3-5-sonnet';
-    const provider = settings.llmProvider === 'openai' ? 'OpenAI Direct' : 'OpenRouter';
+    const llmProvider = task.d2Snapshot?.provider || (settings.llmProvider === 'openai' ? 'openai' : 'openrouter');
+    const model = task.d2Snapshot?.model || settings.llmModel || 'anthropic/claude-3-5-sonnet';
+    const provider = llmProvider === 'openai' ? 'OpenAI Direct' : 'OpenRouter';
 
     // 0. Pre-Flight Quote Trademark Check to save tokens and costs early!
     const quote = (task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || '').trim();
@@ -574,26 +604,7 @@ export class TaskLogService {
     }
 
     // 2. Prepare System Prompt & User Message
-    const imageGeneration = task.imageGeneration;
-    const isGptImage = imageGeneration?.provider === 'GPT_IMAGE_2';
-    const isGptImage25 = isGptImage && imageGeneration?.model === 'openai/gpt-image-2.5-sunburst';
-    const bgMode = imageGeneration?.background || (isGptImage25 ? 'transparent' : 'deep_blue');
-    const chromaKeyDirective = (modelName: string) => `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): ${modelName}. Create a prompt specifically for ${modelName}. Background mode: ${bgMode}. Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement.`;
-
-    const providerDirective = isGptImage25
-      ? (bgMode === 'deep_blue'
-          ? chromaKeyDirective('OpenAI GPT Image 2.5 Sunburst')
-          : bgMode === 'transparent'
-          ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: transparent. Ensure the artwork is completely isolated with a clean transparent background. Do not generate background scenery, frames, product mockups, checkerboard patterns, or extra solid backdrops.`
-          : `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: opaque. Keep the artwork isolated and free of product mockups or scenes.`)
-      : isGptImage
-      ? (bgMode === 'opaque'
-          ? `\n\nCURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: opaque. Keep the artwork isolated and free of product mockups or scenes.`
-          : chromaKeyDirective('OpenAI GPT Image 2'))
-      : imageGeneration?.provider === 'IDEOGRAM_V4'
-      ? '\n\nCURRENT IMAGE PROVIDER: Ideogram 4.0. Preserve the established Ideogram-compatible prompt style tailored for high detail, typography accuracy and photorealistic or illustrative graphics.'
-      : '\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.';
-    const systemPrompt = SystemPromptService.getPromptGeneratorPrompt() + providerDirective;
+    const systemPrompt = task.d2Snapshot?.systemPrompt || this.buildD2SystemPrompt(task.imageGeneration, SystemPromptService.getPromptGeneratorPrompt());
     const referenceSection = task.promptPool?.enabled
       ? PromptPoolService.buildReferenceSection(task.promptPool.selectedReferences)
       : '';
@@ -617,7 +628,7 @@ export class TaskLogService {
 
     // 3. Execute HTTP Call to OpenRouter / OpenAI
     const start = Date.now();
-    const url = settings.llmProvider === 'openai'
+    const url = llmProvider === 'openai'
       ? 'https://api.openai.com/v1/chat/completions'
       : 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -626,7 +637,7 @@ export class TaskLogService {
       'Authorization': `Bearer ${apiKey}`
     };
 
-    if (settings.llmProvider !== 'openai') {
+    if (llmProvider !== 'openai') {
       headers['HTTP-Referer'] = 'https://mba-hub.local';
       headers['X-Title'] = 'MBA HUB';
     }
@@ -729,63 +740,6 @@ export class TaskLogService {
     }, () => TaskExecutionControl.markWaiting(taskId, 'D3'));
   }
 
-  private static refreshPromptPoolSettings(task: DesignTaskLog): PromptPoolSnapshot {
-    const enabled = loadSettings().designerPromptPoolEnabled;
-    const snapshot: PromptPoolSnapshot = {
-      enabled,
-      selectedReferences: enabled
-        ? PromptPoolService.selectAndRecord({
-            niche1: task.niche1 || task.payload?.niche1 || task.payload?.niche,
-            niche2: task.niche2 || task.payload?.niche2,
-            subniche: task.subniche || task.payload?.subniche,
-            quote: task.quote || task.payload?.quote,
-            style: task.payload?.style || task.payload?.stylePreset,
-            feeling: task.payload?.feeling || task.payload?.feelings,
-            audience: task.customAnswers?.audience || task.payload?.audience,
-            customInstruction: task.payload?.customInstruction || task.payload?.custominstruction || task.payload?.['custom instruction']
-          })
-        : []
-    };
-    task.promptPool = snapshot;
-    return snapshot;
-  }
-
-  /** Keep the task's chosen provider, but refresh that provider's mutable settings for a manual rerun. */
-  private static refreshImageGenerationSettings(task: DesignTaskLog): ImageGenerationSnapshot {
-    const settings = loadSettings();
-    const provider = task.imageGeneration?.provider
-      || task.payload?.imageGeneration?.provider
-      || (task.payload?.imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : task.payload?.imageProvider === 'IDEOGRAM_V4' ? 'IDEOGRAM_V4' : 'IDEOGRAM');
-    const effectiveGpt = getEffectiveGptImageSettings(settings);
-    const snapshot: ImageGenerationSnapshot = provider === 'GPT_IMAGE_2'
-      ? {
-          provider: 'GPT_IMAGE_2',
-          model: effectiveGpt.model,
-          quality: effectiveGpt.quality,
-          aspectRatio: effectiveGpt.aspectRatio,
-          background: effectiveGpt.background
-        }
-      : provider === 'IDEOGRAM_V4'
-      ? {
-          provider: 'IDEOGRAM_V4',
-          model: IdeogramV4Service.MODEL,
-          renderingSpeed: settings.ideogramV4RenderingSpeed || 'DEFAULT',
-          aspectRatio: settings.ideogramV4AspectRatio || '10x16',
-          transparent: settings.ideogramV4Transparent ?? true,
-          magicPrompt: settings.ideogramV4MagicPrompt ?? true
-        }
-      : {
-          provider: 'IDEOGRAM',
-          model: settings.ideogramModel || 'V_3',
-          renderingSpeed: settings.ideogramRenderingSpeed || 'DEFAULT',
-          aspectRatio: settings.ideogramAspectRatio || '10x16',
-          style: settings.ideogramStyle || 'GENERAL',
-          magicPrompt: settings.ideogramMagicPromptOption || 'AUTO'
-        };
-    task.imageGeneration = snapshot;
-    return snapshot;
-  }
-
   /** Backward-compatible entry point used by older callers and recovery paths. */
   static async processTaskWithIdeogram(taskId: string, promptText?: string) {
     return this.processTaskWithImageGenerator(taskId, promptText);
@@ -809,6 +763,11 @@ export class TaskLogService {
     const isGptImage25 = isGptImage && snapshot.model === 'openai/gpt-image-2.5-sunburst';
     const providerLabel = isGptImage25 ? 'GPT Image 2.5 Sunburst' : isGptImage ? 'GPT Image 2' : isIdeogramV4 ? 'Ideogram 4.0' : 'Ideogram';
     const model = snapshot.model || (isIdeogramV4 ? IdeogramV4Service.MODEL : isGptImage ? (settings.gptImageModel || OpenRouterImageService.MODEL_V25) : 'V_3');
+
+    if (model === 'openai/gpt-image-2') {
+      this.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: 'GPT Image 2.0 wird nicht mehr ausgeführt; Task bleibt lesbar.' });
+      return;
+    }
 
     this.updateTaskStatus(taskId, { status: 'GENERATING_IMAGE' });
 
@@ -876,18 +835,37 @@ export class TaskLogService {
         sourceUrl = result.imageUrl;
         fs.writeFileSync(localFilePath, result.bytes);
       } else {
-        const result = await IdeogramService.generateImage({
-          prompt,
-          model,
-          renderingSpeed: snapshot.renderingSpeed,
-          aspectRatio: snapshot.aspectRatio,
-          styleType: snapshot.style,
-          magicPromptOption: snapshot.magicPrompt
-        });
-        sourceUrl = result.imageUrl;
-        const imgRes = await fetch(result.imageUrl);
-        if (!imgRes.ok) throw new Error(`Ideogram-Bild konnte nicht heruntergeladen werden (HTTP ${imgRes.status}).`);
-        fs.writeFileSync(localFilePath, Buffer.from(await imgRes.arrayBuffer()));
+        const pending = task.pendingImageDownload;
+        if (pending?.provider === 'IDEOGRAM' && pending.model === model && pending.prompt === prompt) {
+          sourceUrl = pending.url;
+        } else {
+          const result = await IdeogramService.generateImage({
+            prompt,
+            model,
+            renderingSpeed: snapshot.renderingSpeed,
+            aspectRatio: snapshot.aspectRatio,
+            styleType: snapshot.style,
+            magicPromptOption: typeof snapshot.magicPrompt === 'string' ? snapshot.magicPrompt : undefined
+          });
+          sourceUrl = result.imageUrl;
+          if (!this.updateTaskStatus(taskId, { pendingImageDownload: { url: sourceUrl, prompt, model, provider: 'IDEOGRAM' } })) {
+            throw new Error('Ideogram-Bildantwort konnte nicht für den späteren Download gespeichert werden.');
+          }
+          this.addEvent(taskId, {
+            timestamp: new Date().toISOString(), type: 'IMAGE_PROVIDER_READY',
+            title: 'Ideogram-Bild erzeugt; lokaler Download folgt',
+            content: { provider: 'IDEOGRAM', model }, metadata: { model, provider: 'Ideogram' }
+          });
+        }
+        try {
+          await IdeogramService.downloadImage(sourceUrl, localFilePath);
+        } catch (error) {
+          if (error instanceof ExpiredIdeogramImageError) {
+            this.updateTaskStatus(taskId, { pendingImageDownload: undefined });
+            throw new Error(`${error.message} Ein erneuter D3-Start erzeugt kostenpflichtig ein neues Bild.`);
+          }
+          throw error;
+        }
       }
       console.log(`[TaskLogService] 💾 Bild für Task ${taskId} lokal gespeichert: ${localFilePath}`);
 
@@ -920,6 +898,7 @@ export class TaskLogService {
         status: 'ANALYZING_DESIGN',
         imageUrl: sourceUrl,
         localImagePath: localUrl,
+        pendingImageDownload: undefined,
         hasError: false
       });
 
@@ -1940,6 +1919,9 @@ export class TaskLogService {
       throw new Error(`Task ${taskId} nicht gefunden.`);
     }
     if (currentTask.inQueue || ['CANCELLED', 'COMPLETED', 'UPDATE_QUEUED'].includes(currentTask.status) || (currentTask.executionControl && currentTask.executionControl.phase !== 'finished')) throw new Error('Task ist abgeschlossen, abgebrochen oder bereits in Ausführung; Wiederholung gesperrt.');
+    if (['LLM_REQUEST', 'IDEOGRAM_REQUEST'].includes(stepType) && currentTask.imageGeneration?.model === 'openai/gpt-image-2') {
+      throw new Error('GPT Image 2.0 wird nicht mehr ausgeführt. Dieser historische Task bleibt lesbar; bitte einen neuen Task mit GPT Image 2.5 anlegen.');
+    }
     if (['RESIZE_REQUEST', 'UPDATE_U6_5_RESIZE'].includes(stepType)) throw new Error('Resize bitte über den gesicherten Finalisierungs-Retry ausführen.');
     if (stepType === 'TRANSLATION_REQUEST') throw new Error('Übersetzung benötigt eine fachliche Freigabe; bitte den Task prüfen.');
     if (!['PREFLIGHT_TM_REQUEST', 'LLM_REQUEST', 'IDEOGRAM_REQUEST', 'ANALYSIS_REQUEST', 'LISTING_REQUEST', 'TM_CHECK_REQUEST', 'TM_REFINE_REQUEST', 'VECTORIZE_REQUEST', 'SVG_AUDIT_REQUEST', 'SVG_REVIEW'].includes(stepType) && !stepType.startsWith('UPDATE_')) throw new Error(`Unbekannter Step-Typ: ${stepType}`);
@@ -1960,7 +1942,9 @@ export class TaskLogService {
       currentTask.resultPrompt = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
-      this.refreshPromptPoolSettings(currentTask);
+      if (!currentTask.d2Snapshot) {
+        currentTask.events.push({ timestamp: new Date().toISOString(), type: 'TASK_HANDOFF', title: 'Legacy-D2-Retry', content: 'Dieser ältere Task hat keinen vollständigen D2-Snapshot; aktuelle LLM-Vorgaben werden verwendet.' });
+      }
       TaskRepository.updateTask(taskId, currentTask);
 
       this.generatePromptWithOpenRouter(taskId).catch(err => {
@@ -1980,13 +1964,12 @@ export class TaskLogService {
       currentTask.trademarkRefineResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
-      const refreshedSettings = this.refreshImageGenerationSettings(currentTask);
       TaskRepository.updateTask(taskId, currentTask);
 
       this.processTaskWithImageGenerator(taskId).catch(err => {
         console.error(`[TaskLogService] Retry image generation failed for task ${taskId}:`, err);
       });
-      return { success: true, message: `Bildgenerierung mit ${refreshedSettings.provider} und aktuellen Settings neu gestartet.` };
+      return { success: true, message: `Bildgenerierung mit ${currentTask.imageGeneration?.provider || 'dem gespeicherten Provider'} und gespeicherten Vorgaben neu gestartet.` };
     }
 
     if (stepType === 'ANALYSIS_REQUEST') {
@@ -2332,12 +2315,12 @@ export class TaskLogService {
     }
 
     if (params.action === 'REGENERATE_IMAGE') {
+      if (task.imageGeneration?.model === 'openai/gpt-image-2') throw new Error('GPT Image 2.0 wird nicht mehr ausgeführt. Dieser historische Task bleibt lesbar.');
       const promptToUse = params.updatedPrompt || task.resultPrompt || task.payload?.quote || '';
       task.status = 'GENERATING_IMAGE';
       task.checkpoint = undefined;
       task.hasError = false;
       task.errorDetails = undefined;
-      const refreshedSettings = this.refreshImageGenerationSettings(task);
 
       if (!this.updateTaskStatus(taskId, task)) throw new Error('Neustart konnte nicht gespeichert werden.');
 
@@ -2355,7 +2338,7 @@ export class TaskLogService {
         console.error(`[TaskLogService] Regenerate image failed for task ${taskId}:`, err);
       });
 
-      return { success: true, message: `Bildgenerierung mit ${refreshedSettings.provider} und aktuellen Settings neu gestartet.` };
+      return { success: true, message: `Bildgenerierung mit ${task.imageGeneration?.provider || 'dem gespeicherten Provider'} und gespeicherten Vorgaben neu gestartet.` };
     }
 
     if (params.action === 'APPROVE') {

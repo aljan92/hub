@@ -7,6 +7,7 @@ import { DesignerConceptService, type DesignerConcept } from '../src/server/serv
 import { DesignerService } from '../src/server/services/designerService';
 import { LLMService } from '../src/server/services/llmService';
 import { TaskLogService } from '../src/server/services/taskLogService';
+import { TaskRepository } from '../src/server/storage/taskRepository';
 
 test('extractConceptCount extracts explicit numbers and German words, defaults appropriately and clamps', () => {
   // Explicit digit
@@ -38,7 +39,7 @@ test('extractConceptCount extracts explicit numbers and German words, defaults a
 });
 
 test('concept history records, rotates at 100 items, and formats avoidance list', () => {
-  const historyFile = path.resolve(process.cwd(), 'data/designer_concept_history.json');
+  const historyFile = path.resolve(process.cwd(), 'data/designer_random_concept_history.json');
   const backup = fs.existsSync(historyFile) ? fs.readFileSync(historyFile, 'utf-8') : null;
 
   try {
@@ -136,12 +137,7 @@ test('LLMService.generateDesignerConcepts validates required fields and respects
     assert.equal(concepts[1].quote, 'Powered by Voltage and Espresso');
     assert.equal(concepts[1].style, undefined);
 
-    // Verify system prompt contains the explicit required categories
-    assert.match(capturedBody.messages[0].content, /evergreen/);
-    assert.match(capturedBody.messages[0].content, /Berufe/);
-    assert.match(capturedBody.messages[0].content, /Haustiere mit beliebten Rassen/);
-    assert.match(capturedBody.messages[0].content, /Hobbys & Sport/);
-    assert.match(capturedBody.messages[0].content, /Familie\/Lifestyle/);
+    assert.match(capturedBody.messages[0].content, /theme families assigned/);
 
     // Verify avoidance list is included in system prompt
     assert.match(capturedBody.messages[0].content, /Gardening: "Grow Through It"/);
@@ -151,6 +147,16 @@ test('LLMService.generateDesignerConcepts validates required fields and respects
 });
 
 test('DesignerService.batchCreateTasks creates multiple tasks with proper D-suffix and sequential IDs', () => {
+  const originalCreate = TaskLogService.createTaskLog;
+  const originalFind = TaskRepository.findDesignerRequest;
+  let counter = 0;
+  (TaskRepository as any).findDesignerRequest = () => null;
+  (TaskLogService as any).createTaskLog = (params: any) => ({
+    id: `#${String(++counter).padStart(3, '0')}-D`,
+    payload: params.payload,
+    imageGeneration: { provider: params.payload.imageProvider }
+  });
+  try {
   const concepts = [
     { niche1: 'Gardening', quote: 'Plant Lady' },
     { niche1: 'Dogs', subniche: 'Golden Retriever', quote: 'Golden State of Mind' }
@@ -170,9 +176,16 @@ test('DesignerService.batchCreateTasks creates multiple tasks with proper D-suff
   assert.equal(results[0].task.payload.niche1, 'Gardening');
   assert.equal(results[1].task.payload.subniche, 'Golden Retriever');
   assert.equal(results[0].task.imageGeneration.provider, 'IDEOGRAM_V4');
+  } finally {
+    (TaskLogService as any).createTaskLog = originalCreate;
+    (TaskRepository as any).findDesignerRequest = originalFind;
+  }
 });
 
 test('DesignerConceptService.generateConcepts delegates to LLMService and persists history', async () => {
+  const historyFile = path.resolve(process.cwd(), 'data/designer_random_concept_history.json');
+  const backup = fs.existsSync(historyFile) ? fs.readFileSync(historyFile, 'utf-8') : null;
+  DesignerConceptService.clearHistory();
   const originalFetch = (LLMService as any).executeFetch;
   (LLMService as any).executeFetch = async () => ({
     ok: true,
@@ -202,5 +215,42 @@ test('DesignerConceptService.generateConcepts delegates to LLMService and persis
     assert.ok(found, 'Generated concept was recorded in persistent history');
   } finally {
     (LLMService as any).executeFetch = originalFetch;
+    if (backup === null) DesignerConceptService.clearHistory();
+    else fs.writeFileSync(historyFile, backup, 'utf-8');
+  }
+});
+
+test('user-directed concepts are excluded from random history', async () => {
+  const original = LLMService.generateDesignerConcepts;
+  const before = DesignerConceptService.loadHistory();
+  (LLMService as any).generateDesignerConcepts = async () => [{ niche1: 'Personal Idea', quote: 'My own quote' }];
+  try {
+    await DesignerConceptService.generateConcepts({ prompt: 'Meine eigene Idee', count: 1 });
+    assert.deepEqual(DesignerConceptService.loadHistory(), before);
+  } finally {
+    (LLMService as any).generateDesignerConcepts = original;
+  }
+});
+
+test('random concepts retry one repeated niche and record only the accepted suggestion', async () => {
+  const historyFile = path.resolve(process.cwd(), 'data/designer_random_concept_history.json');
+  const backup = fs.existsSync(historyFile) ? fs.readFileSync(historyFile, 'utf-8') : null;
+  const original = LLMService.generateDesignerConcepts;
+  DesignerConceptService.clearHistory();
+  DesignerConceptService.recordConcepts([{ niche1: 'Dog Lovers', quote: 'Love My Dog' }], ['animal interests']);
+  let calls = 0;
+  (LLMService as any).generateDesignerConcepts = async () => {
+    calls++;
+    return calls === 1 ? [{ niche1: 'Dog Lovers', quote: 'Another Dog Quote' }] : [{ niche1: 'Astronomy', quote: 'Made of Stardust' }];
+  };
+  try {
+    const result = await DesignerConceptService.generateConcepts({ random: true, count: 1 });
+    assert.equal(calls, 2);
+    assert.equal(result.concepts[0].niche1, 'Astronomy');
+    assert.deepEqual(DesignerConceptService.loadHistory().map(item => item.niche1), ['Dog Lovers', 'Astronomy']);
+  } finally {
+    (LLMService as any).generateDesignerConcepts = original;
+    if (backup === null) DesignerConceptService.clearHistory();
+    else fs.writeFileSync(historyFile, backup, 'utf-8');
   }
 });

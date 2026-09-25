@@ -78,10 +78,10 @@ async function run() {
     gptImage25Background: 'transparent'
   };
   const effective20 = getEffectiveGptImageSettings(mockSettings20);
-  assert(effective20.model === 'openai/gpt-image-2', 'getEffectiveGptImageSettings selects 2.0');
-  assert(effective20.quality === 'medium', 'getEffectiveGptImageSettings uses 2.0 quality');
-  assert(effective20.aspectRatio === '1:1', 'getEffectiveGptImageSettings uses 2.0 aspect ratio');
-  assert(effective20.background === 'opaque', 'getEffectiveGptImageSettings uses 2.0 background');
+  assert(effective20.model === 'openai/gpt-image-2.5-sunburst', 'new tasks ignore legacy 2.0 setting');
+  assert(effective20.quality === 'xhigh', 'new tasks use 2.5 quality');
+  assert(effective20.aspectRatio === '2:3', 'new tasks use 2.5 aspect ratio');
+  assert(effective20.background === 'transparent', 'new tasks use 2.5 background');
 
   // 4. Test prompt generation directives
   let capturedPrompt = '';

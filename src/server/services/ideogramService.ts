@@ -1,4 +1,7 @@
 import { loadSettings } from './settingsService';
+import fs from 'node:fs';
+
+export class ExpiredIdeogramImageError extends Error {}
 
 export interface IdeogramGenerateOptions {
   prompt: string;
@@ -17,6 +20,24 @@ export interface IdeogramModelItem {
 }
 
 export class IdeogramService {
+  static async downloadImage(imageUrl: string, targetPath: string): Promise<void> {
+    const url = new URL(imageUrl);
+    if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Ideogram lieferte eine ungültige Bild-URL.');
+    const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+    if (!response.ok) {
+      if ([403, 404, 410].includes(response.status)) throw new ExpiredIdeogramImageError(`Ideogram-Bild-URL ist nicht mehr verfügbar (HTTP ${response.status}).`);
+      throw new Error(`Ideogram-Bild konnte nicht heruntergeladen werden (HTTP ${response.status}).`);
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length < 8 || bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('Ideogram-Bild ist kein gültiger PNG-Download.');
+    const tempPath = `${targetPath}.${process.pid}.tmp`;
+    try {
+      fs.writeFileSync(tempPath, bytes);
+      fs.renameSync(tempPath, targetPath);
+    } finally {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    }
+  }
   /**
    * Test Ideogram API connection (0 credits consumed)
    */

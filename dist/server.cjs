@@ -500,6 +500,13 @@ var init_taskRepository = __esm2({
         payload_json TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS designer_requests (
+        request_id TEXT PRIMARY KEY,
+        input_hash TEXT NOT NULL,
+        task_id TEXT NOT NULL REFERENCES tasks(id),
+        created_at TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_tasks_counter ON tasks(counter DESC);
       CREATE INDEX IF NOT EXISTS idx_tasks_source_counter ON tasks(source, counter DESC);
       CREATE INDEX IF NOT EXISTS idx_tasks_status_counter ON tasks(status, counter DESC);
@@ -529,8 +536,16 @@ var init_taskRepository = __esm2({
         let vectorCount = 0;
         let openRouterCost = 0;
         if (Array.isArray(task.events)) {
+          let pendingV3Responses = 0;
           for (const ev of task.events) {
-            if (ev.type === "IDEOGRAM_RESPONSE" && ev.content?.provider !== "GPT_IMAGE_2") imageGenCount++;
+            if (ev.type === "IMAGE_PROVIDER_READY") {
+              imageGenCount++;
+              pendingV3Responses++;
+            }
+            if (ev.type === "IDEOGRAM_RESPONSE" && ev.content?.provider !== "GPT_IMAGE_2") {
+              if (ev.content?.provider === "IDEOGRAM" && pendingV3Responses > 0) pendingV3Responses--;
+              else imageGenCount++;
+            }
             if (ev.type === "VECTORIZE_RESPONSE") vectorCount++;
             if (ev.metadata?.costUsd) openRouterCost += Number(ev.metadata.costUsd) || 0;
           }
@@ -809,7 +824,12 @@ var init_taskRepository = __esm2({
       /**
        * Inserts a new task atomically.
        */
-      static createTask(task) {
+      static findDesignerRequest(requestId) {
+        const db = this.getDb();
+        const row = db.prepare(`SELECT r.input_hash, t.payload_json FROM designer_requests r JOIN tasks t ON t.id = r.task_id WHERE r.request_id = ?`).get(requestId);
+        return row ? { task: JSON.parse(row.payload_json), inputHash: row.input_hash } : null;
+      }
+      static createTask(task, request3) {
         const db = this.getDb();
         db.exec("BEGIN IMMEDIATE;");
         try {
@@ -872,6 +892,9 @@ var init_taskRepository = __esm2({
             cols.openrouter_cost_usd,
             cols.payload_json
           );
+          if (request3) {
+            db.prepare("INSERT INTO designer_requests (request_id, input_hash, task_id, created_at) VALUES (?, ?, ?, ?)").run(request3.id, request3.inputHash, task.id, task.receivedAt);
+          }
           db.exec("COMMIT;");
           return task;
         } catch (err) {
@@ -2600,8 +2623,8 @@ var require_node = __commonJS2({
           }
           break;
         case "FILE":
-          var fs27 = require("fs");
-          stream2 = new fs27.SyncWriteStream(fd2, { autoClose: false });
+          var fs28 = require("fs");
+          stream2 = new fs28.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -19033,8 +19056,8 @@ var require_node2 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs27 = require("fs");
-          stream2 = new fs27.SyncWriteStream(fd2, { autoClose: false });
+          var fs28 = require("fs");
+          stream2 = new fs28.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -19752,8 +19775,8 @@ var require_node3 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs27 = require("fs");
-          stream2 = new fs27.SyncWriteStream(fd2, { autoClose: false });
+          var fs28 = require("fs");
+          stream2 = new fs28.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -20647,7 +20670,7 @@ var require_view = __commonJS2({
     "use strict";
     var debug17 = require_src3()("express:view");
     var path25 = require("path");
-    var fs27 = require("fs");
+    var fs28 = require("fs");
     var dirname = path25.dirname;
     var basename = path25.basename;
     var extname = path25.extname;
@@ -20713,7 +20736,7 @@ var require_view = __commonJS2({
     function tryStat(path26) {
       debug17('stat "%s"', path26);
       try {
-        return fs27.statSync(path26);
+        return fs28.statSync(path26);
       } catch (e) {
         return void 0;
       }
@@ -21318,8 +21341,8 @@ var require_node4 = __commonJS2({
           }
           break;
         case "FILE":
-          var fs27 = require("fs");
-          stream2 = new fs27.SyncWriteStream(fd2, { autoClose: false });
+          var fs28 = require("fs");
+          stream2 = new fs28.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -21492,7 +21515,7 @@ var require_types = __commonJS2({
 var require_mime = __commonJS2({
   "node_modules/mime/mime.js"(exports2, module3) {
     var path25 = require("path");
-    var fs27 = require("fs");
+    var fs28 = require("fs");
     function Mime() {
       this.types = /* @__PURE__ */ Object.create(null);
       this.extensions = /* @__PURE__ */ Object.create(null);
@@ -21513,7 +21536,7 @@ var require_mime = __commonJS2({
     };
     Mime.prototype.load = function(file) {
       this._loading = file;
-      var map = {}, content = fs27.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
+      var map = {}, content = fs28.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
       lines.forEach(function(line) {
         var fields = line.replace(/\s*#.*|^\s*|\s*$/g, "").split(/\s+/);
         map[fields.shift()] = fields;
@@ -21751,7 +21774,7 @@ var require_send = __commonJS2({
     var escapeHtml = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
-    var fs27 = require("fs");
+    var fs28 = require("fs");
     var mime8 = require_mime();
     var ms = require_ms5();
     var onFinished = require_on_finished();
@@ -22084,7 +22107,7 @@ var require_send = __commonJS2({
       var i = 0;
       var self2 = this;
       debug17('stat "%s"', path26);
-      fs27.stat(path26, function onstat(err, stat) {
+      fs28.stat(path26, function onstat(err, stat) {
         if (err && err.code === "ENOENT" && !extname(path26) && path26[path26.length - 1] !== sep) {
           return next(err);
         }
@@ -22099,7 +22122,7 @@ var require_send = __commonJS2({
         }
         var p = path26 + "." + self2._extensions[i++];
         debug17('stat "%s"', p);
-        fs27.stat(p, function(err2, stat) {
+        fs28.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -22117,7 +22140,7 @@ var require_send = __commonJS2({
         }
         var p = join(path26, self2._index[i]);
         debug17('stat "%s"', p);
-        fs27.stat(p, function(err2, stat) {
+        fs28.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self2.emit("file", p, stat);
@@ -22129,7 +22152,7 @@ var require_send = __commonJS2({
     SendStream.prototype.stream = function stream(path26, options2) {
       var self2 = this;
       var res = this.res;
-      var stream2 = fs27.createReadStream(path26, options2);
+      var stream2 = fs28.createReadStream(path26, options2);
       this.emit("stream", stream2);
       stream2.pipe(res);
       function cleanup() {
@@ -29271,7 +29294,7 @@ var require_package = __commonJS2({
 // node_modules/dotenv/lib/main.js
 var require_main = __commonJS2({
   "node_modules/dotenv/lib/main.js"(exports2, module3) {
-    var fs27 = require("fs");
+    var fs28 = require("fs");
     var path25 = require("path");
     var os2 = require("os");
     var crypto7 = require("crypto");
@@ -29380,7 +29403,7 @@ var require_main = __commonJS2({
       if (options2 && options2.path && options2.path.length > 0) {
         if (Array.isArray(options2.path)) {
           for (const filepath of options2.path) {
-            if (fs27.existsSync(filepath)) {
+            if (fs28.existsSync(filepath)) {
               possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
             }
           }
@@ -29390,7 +29413,7 @@ var require_main = __commonJS2({
       } else {
         possibleVaultPath = path25.resolve(process.cwd(), ".env.vault");
       }
-      if (fs27.existsSync(possibleVaultPath)) {
+      if (fs28.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
       }
       return null;
@@ -29439,7 +29462,7 @@ var require_main = __commonJS2({
       const parsedAll = {};
       for (const path26 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs27.readFileSync(path26, { encoding }));
+          const parsed = DotenvModule.parse(fs28.readFileSync(path26, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options2);
         } catch (e) {
           if (debug17) {
@@ -51101,20 +51124,11 @@ function resolveImageProvider(requestedProvider, configuredProvider) {
   return configuredProvider === "GPT_IMAGE_2" || configuredProvider === "IDEOGRAM_V4" ? configuredProvider : "IDEOGRAM";
 }
 function getEffectiveGptImageSettings(settings) {
-  const model = settings.gptImageModel === "openai/gpt-image-2" ? "openai/gpt-image-2" : "openai/gpt-image-2.5-sunburst";
-  if (model === "openai/gpt-image-2.5-sunburst") {
-    return {
-      model,
-      quality: settings.gptImage25Quality || settings.gptImageQuality || "high",
-      aspectRatio: settings.gptImage25AspectRatio || settings.gptImageAspectRatio || "3:4",
-      background: settings.gptImage25Background || settings.gptImageBackground || "transparent"
-    };
-  }
   return {
-    model: "openai/gpt-image-2",
-    quality: settings.gptImageQuality || "high",
-    aspectRatio: settings.gptImageAspectRatio || "3:4",
-    background: settings.gptImageBackground || "transparent"
+    model: "openai/gpt-image-2.5-sunburst",
+    quality: settings.gptImage25Quality || "high",
+    aspectRatio: settings.gptImage25AspectRatio || "3:4",
+    background: settings.gptImage25Background || "transparent"
   };
 }
 function getSettingsFilePath() {
@@ -51184,7 +51198,7 @@ function loadSettings() {
 }
 function saveSettings(newSettings) {
   const current = loadSettings();
-  const merged = { ...current, ...newSettings };
+  const merged = { ...current, ...newSettings, gptImageModel: "openai/gpt-image-2.5-sunburst" };
   cachedSettings = merged;
   const filePath = getSettingsFilePath();
   try {
@@ -55729,8 +55743,8 @@ Translate and localize into de, fr, es, it, and ja now. Ensure Title ends with t
         let imagePayload = fourPanelImageBase64OrPath;
         if (!imagePayload.startsWith("data:") && !imagePayload.startsWith("http")) {
           try {
-            const fs27 = await import("fs");
-            const buffer = fs27.readFileSync(imagePayload);
+            const fs28 = await import("fs");
+            const buffer = fs28.readFileSync(imagePayload);
             imagePayload = `data:image/png;base64,${buffer.toString("base64")}`;
           } catch (e) {
           }
@@ -55826,12 +55840,7 @@ ${params2.avoidanceList.map((a) => `- ${a}`).join("\n")}` : "";
         const systemPrompt = `You are a world-class Print-on-Demand (POD) Merch by Amazon Art Director and Bestseller Niche Strategist.
 
 Your goal is to generate commercially viable, highly sellable, authentic T-shirt design concepts.
-When choosing broad niches or generating random ideas, focus on high-demand categories such as:
-- evergreen
-- Berufe
-- Haustiere mit beliebten Rassen
-- Hobbys & Sport
-- Familie/Lifestyle
+When generating random ideas, follow the theme families assigned in the user message. Vary the primary niche and slogan across concepts. Do not default to one popular category. For user-directed ideas, follow the requested topic rather than a category list.
 
 IMPORTANT FIELD RULES:
 1. "niche1" (REQUIRED): The primary broad niche in English (1-3 words).
@@ -56416,12 +56425,33 @@ var init_trademarkPolicyService = __esm2({
 });
 
 // src/server/services/ideogramService.ts
-var IdeogramService;
+var import_node_fs, ExpiredIdeogramImageError, IdeogramService;
 var init_ideogramService = __esm2({
   "src/server/services/ideogramService.ts"() {
     "use strict";
     init_settingsService();
+    import_node_fs = __toESM2(require("node:fs"), 1);
+    ExpiredIdeogramImageError = class extends Error {
+    };
     IdeogramService = class {
+      static async downloadImage(imageUrl, targetPath) {
+        const url = new URL(imageUrl);
+        if (url.protocol !== "https:" || url.username || url.password) throw new Error("Ideogram lieferte eine ung\xFCltige Bild-URL.");
+        const response2 = await fetch(url, { signal: AbortSignal.timeout(6e4) });
+        if (!response2.ok) {
+          if ([403, 404, 410].includes(response2.status)) throw new ExpiredIdeogramImageError(`Ideogram-Bild-URL ist nicht mehr verf\xFCgbar (HTTP ${response2.status}).`);
+          throw new Error(`Ideogram-Bild konnte nicht heruntergeladen werden (HTTP ${response2.status}).`);
+        }
+        const bytes = Buffer.from(await response2.arrayBuffer());
+        if (bytes.length < 8 || bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") throw new Error("Ideogram-Bild ist kein g\xFCltiger PNG-Download.");
+        const tempPath = `${targetPath}.${process.pid}.tmp`;
+        try {
+          import_node_fs.default.writeFileSync(tempPath, bytes);
+          import_node_fs.default.renameSync(tempPath, targetPath);
+        } finally {
+          if (import_node_fs.default.existsSync(tempPath)) import_node_fs.default.unlinkSync(tempPath);
+        }
+      }
       /**
        * Test Ideogram API connection (0 credits consumed)
        */
@@ -114507,7 +114537,7 @@ ${end.comment}` : end.comment;
     var import_promises3 = __toESM3(require("node:fs/promises"), 1);
     var import_node_process = __toESM3(require("node:process"), 1);
     var import_node_os = __toESM3(require("node:os"), 1);
-    var import_node_fs3 = __toESM3(require("node:fs"), 1);
+    var import_node_fs32 = __toESM3(require("node:fs"), 1);
     var import_node_fs22 = __toESM3(require("node:fs"), 1);
     var import_node_fs4 = __toESM3(require("node:fs"), 1);
     var isDockerCached;
@@ -114558,12 +114588,12 @@ ${end.comment}` : end.comment;
         return true;
       }
       try {
-        if (import_node_fs3.default.readFileSync("/proc/version", "utf8").toLowerCase().includes("microsoft")) {
+        if (import_node_fs32.default.readFileSync("/proc/version", "utf8").toLowerCase().includes("microsoft")) {
           return !isInsideContainer();
         }
       } catch {
       }
-      if (import_node_fs3.default.existsSync("/proc/sys/fs/binfmt_misc/WSLInterop") || import_node_fs3.default.existsSync("/run/WSL")) {
+      if (import_node_fs32.default.existsSync("/proc/sys/fs/binfmt_misc/WSLInterop") || import_node_fs32.default.existsSync("/run/WSL")) {
         return !isInsideContainer();
       }
       return false;
@@ -144340,7 +144370,7 @@ ${value2}`, dataLines++;
         this._protocolVersion = version22;
       }
     };
-    var import_node_crypto10 = require("node:crypto");
+    var import_node_crypto11 = require("node:crypto");
     var import_node_tls = require("node:tls");
     var import_bytes = __toESM3(require_bytes2());
     function getRawBody(req, { limit, encoding }) {
@@ -144376,7 +144406,7 @@ ${value2}`, dataLines++;
       constructor(_endpoint, res, options2) {
         this._endpoint = _endpoint;
         this.res = res;
-        this._sessionId = (0, import_node_crypto10.randomUUID)();
+        this._sessionId = (0, import_node_crypto11.randomUUID)();
         this._options = options2 || { enableDnsRebindingProtection: false };
       }
       /**
@@ -222725,11 +222755,11 @@ function inject300Dpi(pngBuffer) {
   }
   return Buffer.concat(chunks);
 }
-var import_node_fs, import_node_path, import_node_crypto7, currentDir, ArtworkResizeService;
+var import_node_fs2, import_node_path, import_node_crypto7, currentDir, ArtworkResizeService;
 var init_artworkResizeService = __esm2({
   "src/server/services/artworkResizeService.ts"() {
     "use strict";
-    import_node_fs = __toESM2(require("node:fs"), 1);
+    import_node_fs2 = __toESM2(require("node:fs"), 1);
     import_node_path = __toESM2(require("node:path"), 1);
     import_node_crypto7 = require("node:crypto");
     init_artworkRenderSession();
@@ -222748,7 +222778,7 @@ var init_artworkResizeService = __esm2({
           import_node_path.default.resolve(process.cwd(), "Erweiterungen und Programme /Listing Optimizer/assets", "brush_tip.png")
         ];
         for (const c of candidates) {
-          if (import_node_fs.default.existsSync(c)) {
+          if (import_node_fs2.default.existsSync(c)) {
             return c;
           }
         }
@@ -222757,13 +222787,13 @@ var init_artworkResizeService = __esm2({
       static source(task, pngPath) {
         if (task?.svgContent) return { kind: "SVG", svg: task.svgContent };
         if (task?.localSvgPath) {
-          if (!import_node_fs.default.existsSync(task.localSvgPath)) throw new Error("Freigegebene SVG-Datei fehlt; kein stiller PNG-Fallback.");
-          return { kind: "SVG", svg: import_node_fs.default.readFileSync(task.localSvgPath, "utf8") };
+          if (!import_node_fs2.default.existsSync(task.localSvgPath)) throw new Error("Freigegebene SVG-Datei fehlt; kein stiller PNG-Fallback.");
+          return { kind: "SVG", svg: import_node_fs2.default.readFileSync(task.localSvgPath, "utf8") };
         }
         return { kind: "PNG", path: pngPath };
       }
       static fingerprint(source12, customBackgroundColor) {
-        return (0, import_node_crypto7.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles(customBackgroundColor))).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
+        return (0, import_node_crypto7.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs2.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles(customBackgroundColor))).update(import_node_fs2.default.readFileSync(this.getBrushTipPath())).digest("hex");
       }
       static hasCurrentAssets(assets, fingerprint, customBackgroundColor) {
         if (!assets || assets.renderFingerprint !== fingerprint) return false;
@@ -222771,14 +222801,14 @@ var init_artworkResizeService = __esm2({
           const file = assets[p.key] || assets.productVariants?.[p.key];
           if (!file) return false;
           try {
-            const fd = import_node_fs.default.openSync(file, "r");
+            const fd = import_node_fs2.default.openSync(file, "r");
             const header = Buffer.alloc(24);
             try {
-              import_node_fs.default.readSync(fd, header, 0, 24, 0);
+              import_node_fs2.default.readSync(fd, header, 0, 24, 0);
             } finally {
-              import_node_fs.default.closeSync(fd);
+              import_node_fs2.default.closeSync(fd);
             }
-            return header.toString("hex", 0, 8) === "89504e470d0a1a0a" && header.readUInt32BE(16) === p.width && header.readUInt32BE(20) === p.height && assets.renderFileHashes?.[p.key] === (0, import_node_crypto7.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex");
+            return header.toString("hex", 0, 8) === "89504e470d0a1a0a" && header.readUInt32BE(16) === p.width && header.readUInt32BE(20) === p.height && assets.renderFileHashes?.[p.key] === (0, import_node_crypto7.createHash)("sha256").update(import_node_fs2.default.readFileSync(file)).digest("hex");
           } catch {
             return false;
           }
@@ -222789,7 +222819,7 @@ var init_artworkResizeService = __esm2({
         const fingerprint = this.fingerprint(input, customBackgroundColor);
         const files = await this.renderProfiles(taskId, input, artworkProfiles(customBackgroundColor), onProgress, fingerprint);
         const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants } = files;
-        const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto7.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
+        const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto7.createHash)("sha256").update(import_node_fs2.default.readFileSync(file)).digest("hex")]));
         return { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants, renderFingerprint: fingerprint, renderFileHashes };
       }
       static async generateProductVariant(taskId, source12, id, config, customBackgroundColor) {
@@ -222803,8 +222833,8 @@ var init_artworkResizeService = __esm2({
         profiles.forEach(validateProfile);
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const dir = import_node_path.default.resolve(process.cwd(), "data", "designs");
-        import_node_fs.default.mkdirSync(dir, { recursive: true });
-        const data = source12.kind === "SVG" ? source12.svg : "data:image/png;base64," + import_node_fs.default.readFileSync(source12.path).toString("base64");
+        import_node_fs2.default.mkdirSync(dir, { recursive: true });
+        const data = source12.kind === "SVG" ? source12.svg : "data:image/png;base64," + import_node_fs2.default.readFileSync(source12.path).toString("base64");
         return ArtworkRenderSession.run(async (page) => {
           const geometry = await page.evaluate(installArtworkRuntime, { kind: source12.kind, data });
           console.log("[ArtworkRenderer] Quelle", source12.kind, geometry.bounds);
@@ -222814,7 +222844,7 @@ var init_artworkResizeService = __esm2({
               onProgress?.("BRUSH_PREPARATION", `\u{1F58C}\uFE0F Brush: ${detail}\u2026`);
             });
             const metrics = await page.evaluate(prepareBrushLayer, {
-              brushUri: "data:image/png;base64," + import_node_fs.default.readFileSync(this.getBrushTipPath()).toString("base64"),
+              brushUri: "data:image/png;base64," + import_node_fs2.default.readFileSync(this.getBrushTipPath()).toString("base64"),
               seed: Number.parseInt((fingerprint || this.fingerprint(source12)).slice(0, 8), 16)
             });
             console.log("[ArtworkRenderer] Brush-Teilschritte", JSON.stringify(metrics));
@@ -222845,14 +222875,14 @@ var init_artworkResizeService = __esm2({
               stage = "PNG_INTEGRITY_VALIDATION";
               await validateArtworkPng(finalPng, profile.width, profile.height);
               stage = "FILE_COMMIT";
-              import_node_fs.default.writeFileSync(temporary, finalPng);
-              import_node_fs.default.renameSync(temporary, output);
+              import_node_fs2.default.writeFileSync(temporary, finalPng);
+              import_node_fs2.default.renameSync(temporary, output);
               files[profile.key] = output;
               console.log("[ArtworkRenderer]", JSON.stringify({ variant: profile.key, source: source12.kind, width: profile.width, height: profile.height, ms: Date.now() - start3, bytes: png.length }));
             } catch (error) {
               throw new Error(`${profile.key} (${profile.width}\xD7${profile.height}, ${source12.kind}) [${stage}]: ${error instanceof Error ? error.message : String(error)}`);
             } finally {
-              if (import_node_fs.default.existsSync(temporary)) import_node_fs.default.unlinkSync(temporary);
+              if (import_node_fs2.default.existsSync(temporary)) import_node_fs2.default.unlinkSync(temporary);
             }
           }
           return files;
@@ -233470,6 +233500,22 @@ var init_taskLogService = __esm2({
     TaskLogService = class {
       static dataDir = import_path84.default.resolve(process.cwd(), "data");
       static eventBroadcaster = null;
+      static buildD2SystemPrompt(imageGeneration, basePrompt) {
+        const isGptImage = imageGeneration?.provider === "GPT_IMAGE_2";
+        const isGptImage25 = isGptImage && imageGeneration?.model === "openai/gpt-image-2.5-sunburst";
+        const bgMode = imageGeneration?.background || (isGptImage25 ? "transparent" : "deep_blue");
+        const chromaKeyDirective = (modelName) => `
+
+CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): ${modelName}. Create a prompt specifically for ${modelName}. Background mode: ${bgMode}. Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement.`;
+        const providerDirective = isGptImage25 ? bgMode === "deep_blue" ? chromaKeyDirective("OpenAI GPT Image 2.5 Sunburst") : bgMode === "transparent" ? `
+
+CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: transparent. Ensure the artwork is completely isolated with a clean transparent background. Do not generate background scenery, frames, product mockups, checkerboard patterns, or extra solid backdrops.` : `
+
+CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: opaque. Keep the artwork isolated and free of product mockups or scenes.` : isGptImage ? bgMode === "opaque" ? `
+
+CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: opaque. Keep the artwork isolated and free of product mockups or scenes.` : chromaKeyDirective("OpenAI GPT Image 2") : imageGeneration?.provider === "IDEOGRAM_V4" ? "\n\nCURRENT IMAGE PROVIDER: Ideogram 4.0. Preserve the established Ideogram-compatible prompt style tailored for high detail, typography accuracy and photorealistic or illustrative graphics." : "\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.";
+        return basePrompt + providerDirective;
+      }
       static setBroadcaster(fn) {
         this.eventBroadcaster = fn;
       }
@@ -233603,6 +233649,12 @@ var init_taskLogService = __esm2({
             customInstruction: params2.payload?.customInstruction || params2.payload?.custominstruction || params2.payload?.["custom instruction"]
           }) : []
         };
+        const d2Snapshot = params2.source === "UPDATE" ? void 0 : {
+          provider: settings.llmProvider === "openai" ? "openai" : "openrouter",
+          model: settings.llmModel || "anthropic/claude-3-5-sonnet",
+          systemPrompt: this.buildD2SystemPrompt(imageGeneration, SystemPromptService.getPromptGeneratorPrompt()),
+          promptVersion: "m4-v1"
+        };
         const incomingTitle = params2.source === "HERMES" ? "Eingang von Hermes" : params2.source === "TEST" ? "Eingang von Test (Playground)" : params2.source === "UPDATE" ? "Eingang von Amazon Merch (Update-Pipeline)" : "Eingang von Designer";
         const initialEvent = {
           timestamp: now,
@@ -233626,12 +233678,13 @@ var init_taskLogService = __esm2({
           hermesKeywords: params2.payload?.hermesKeywords || (Array.isArray(params2.payload?.keywords) ? params2.payload.keywords : void 0),
           payload: params2.payload || {},
           imageGeneration,
+          d2Snapshot,
           promptPool,
           events: [initialEvent],
           hasError: Boolean(params2.hasError),
           errorDetails: params2.errorDetails
         };
-        const created = TaskRepository.createTask(taskLog);
+        const created = TaskRepository.createTask(taskLog, params2.requestIdentity);
         console.log(`[TaskLogService] \u{1F4CB} Task ${created.id} registriert (${created.source}) von ${created.clientIp || "local"}`);
         this.emitUpdate(created);
         if (params2.source !== "UPDATE") {
@@ -233788,8 +233841,9 @@ var init_taskLogService = __esm2({
         if (!task) return;
         const settings = loadSettings();
         const apiKey = (settings.openRouterApiKey || "").trim();
-        const model = settings.llmModel || "anthropic/claude-3-5-sonnet";
-        const provider = settings.llmProvider === "openai" ? "OpenAI Direct" : "OpenRouter";
+        const llmProvider = task.d2Snapshot?.provider || (settings.llmProvider === "openai" ? "openai" : "openrouter");
+        const model = task.d2Snapshot?.model || settings.llmModel || "anthropic/claude-3-5-sonnet";
+        const provider = llmProvider === "openai" ? "OpenAI Direct" : "OpenRouter";
         const quote5 = (task.payload?.quote || task.payload?.quote_or_phrase || task.payload?.text || "").trim();
         if (quote5 && !options2?.skipPreFlight) {
           console.log(`[TaskLogService] \u{1F6E1}\uFE0F Starte Pre-Flight USPTO TM-Check f\xFCr Quote "${quote5}" (Task ${taskId})...`);
@@ -233948,21 +234002,7 @@ var init_taskLogService = __esm2({
           this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: "Kein OpenRouter API Key in Settings" });
           return;
         }
-        const imageGeneration = task.imageGeneration;
-        const isGptImage = imageGeneration?.provider === "GPT_IMAGE_2";
-        const isGptImage25 = isGptImage && imageGeneration?.model === "openai/gpt-image-2.5-sunburst";
-        const bgMode = imageGeneration?.background || (isGptImage25 ? "transparent" : "deep_blue");
-        const chromaKeyDirective = (modelName) => `
-
-CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): ${modelName}. Create a prompt specifically for ${modelName}. Background mode: ${bgMode}. Do not request transparency or an alpha channel. Require a perfectly uniform, flat, solid deep blue chroma-key background covering the entire canvas behind the isolated artwork. Deep blue is reserved exclusively for the removable background and must not appear in typography, foreground objects, outlines, shadows, highlights, textures, borders, or decorative elements. No checkerboard, transparency-grid pattern, gradient, vignette, scenery, or background objects. End the generated prompt with this background requirement.`;
-        const providerDirective = isGptImage25 ? bgMode === "deep_blue" ? chromaKeyDirective("OpenAI GPT Image 2.5 Sunburst") : bgMode === "transparent" ? `
-
-CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: transparent. Ensure the artwork is completely isolated with a clean transparent background. Do not generate background scenery, frames, product mockups, checkerboard patterns, or extra solid backdrops.` : `
-
-CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2.5 Sunburst. Create a prompt specifically for GPT Image 2.5 Sunburst. Background mode: opaque. Keep the artwork isolated and free of product mockups or scenes.` : isGptImage ? bgMode === "opaque" ? `
-
-CURRENT IMAGE PROVIDER (OVERRIDES PROVIDER-SPECIFIC WORDING ABOVE): OpenAI GPT Image 2. Create a prompt specifically for GPT Image 2. Background mode: opaque. Keep the artwork isolated and free of product mockups or scenes.` : chromaKeyDirective("OpenAI GPT Image 2") : imageGeneration?.provider === "IDEOGRAM_V4" ? "\n\nCURRENT IMAGE PROVIDER: Ideogram 4.0. Preserve the established Ideogram-compatible prompt style tailored for high detail, typography accuracy and photorealistic or illustrative graphics." : "\n\nCURRENT IMAGE PROVIDER: Ideogram. Preserve the established Ideogram-compatible prompt style.";
-        const systemPrompt = SystemPromptService.getPromptGeneratorPrompt() + providerDirective;
+        const systemPrompt = task.d2Snapshot?.systemPrompt || this.buildD2SystemPrompt(task.imageGeneration, SystemPromptService.getPromptGeneratorPrompt());
         const referenceSection = task.promptPool?.enabled ? PromptPoolService.buildReferenceSection(task.promptPool.selectedReferences) : "";
         const userMessage = `Input:
 ${JSON.stringify({ ...task.payload, imageGeneration: task.imageGeneration }, null, 2)}${referenceSection ? `
@@ -233983,12 +234023,12 @@ ${referenceSection}` : ""}`;
           }
         });
         const start3 = Date.now();
-        const url = settings.llmProvider === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
+        const url = llmProvider === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://openrouter.ai/api/v1/chat/completions";
         const headers = {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${apiKey}`
         };
-        if (settings.llmProvider !== "openai") {
+        if (llmProvider !== "openai") {
           headers["HTTP-Referer"] = "https://mba-hub.local";
           headers["X-Title"] = "MBA HUB";
         }
@@ -234076,53 +234116,6 @@ ${referenceSection}` : ""}`;
           return this.processTaskWithImageGeneratorExclusive(taskId, promptText);
         }, () => TaskExecutionControl.markWaiting(taskId, "D3"));
       }
-      static refreshPromptPoolSettings(task) {
-        const enabled = loadSettings().designerPromptPoolEnabled;
-        const snapshot3 = {
-          enabled,
-          selectedReferences: enabled ? PromptPoolService.selectAndRecord({
-            niche1: task.niche1 || task.payload?.niche1 || task.payload?.niche,
-            niche2: task.niche2 || task.payload?.niche2,
-            subniche: task.subniche || task.payload?.subniche,
-            quote: task.quote || task.payload?.quote,
-            style: task.payload?.style || task.payload?.stylePreset,
-            feeling: task.payload?.feeling || task.payload?.feelings,
-            audience: task.customAnswers?.audience || task.payload?.audience,
-            customInstruction: task.payload?.customInstruction || task.payload?.custominstruction || task.payload?.["custom instruction"]
-          }) : []
-        };
-        task.promptPool = snapshot3;
-        return snapshot3;
-      }
-      /** Keep the task's chosen provider, but refresh that provider's mutable settings for a manual rerun. */
-      static refreshImageGenerationSettings(task) {
-        const settings = loadSettings();
-        const provider = task.imageGeneration?.provider || task.payload?.imageGeneration?.provider || (task.payload?.imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : task.payload?.imageProvider === "IDEOGRAM_V4" ? "IDEOGRAM_V4" : "IDEOGRAM");
-        const effectiveGpt = getEffectiveGptImageSettings(settings);
-        const snapshot3 = provider === "GPT_IMAGE_2" ? {
-          provider: "GPT_IMAGE_2",
-          model: effectiveGpt.model,
-          quality: effectiveGpt.quality,
-          aspectRatio: effectiveGpt.aspectRatio,
-          background: effectiveGpt.background
-        } : provider === "IDEOGRAM_V4" ? {
-          provider: "IDEOGRAM_V4",
-          model: IdeogramV4Service.MODEL,
-          renderingSpeed: settings.ideogramV4RenderingSpeed || "DEFAULT",
-          aspectRatio: settings.ideogramV4AspectRatio || "10x16",
-          transparent: settings.ideogramV4Transparent ?? true,
-          magicPrompt: settings.ideogramV4MagicPrompt ?? true
-        } : {
-          provider: "IDEOGRAM",
-          model: settings.ideogramModel || "V_3",
-          renderingSpeed: settings.ideogramRenderingSpeed || "DEFAULT",
-          aspectRatio: settings.ideogramAspectRatio || "10x16",
-          style: settings.ideogramStyle || "GENERAL",
-          magicPrompt: settings.ideogramMagicPromptOption || "AUTO"
-        };
-        task.imageGeneration = snapshot3;
-        return snapshot3;
-      }
       /** Backward-compatible entry point used by older callers and recovery paths. */
       static async processTaskWithIdeogram(taskId, promptText) {
         return this.processTaskWithImageGenerator(taskId, promptText);
@@ -234145,6 +234138,10 @@ ${referenceSection}` : ""}`;
         const isGptImage25 = isGptImage && snapshot3.model === "openai/gpt-image-2.5-sunburst";
         const providerLabel = isGptImage25 ? "GPT Image 2.5 Sunburst" : isGptImage ? "GPT Image 2" : isIdeogramV4 ? "Ideogram 4.0" : "Ideogram";
         const model = snapshot3.model || (isIdeogramV4 ? IdeogramV4Service.MODEL : isGptImage ? settings.gptImageModel || OpenRouterImageService.MODEL_V25 : "V_3");
+        if (model === "openai/gpt-image-2") {
+          this.updateTaskStatus(taskId, { status: "ERROR", hasError: true, errorDetails: "GPT Image 2.0 wird nicht mehr ausgef\xFChrt; Task bleibt lesbar." });
+          return;
+        }
         this.updateTaskStatus(taskId, { status: "GENERATING_IMAGE" });
         const ideogramKey = isIdeogramV4 ? IdeogramV4Service.getApiKey() : settings.ideogramApiKey;
         if (isGptImage && !settings.openRouterApiKey || !isGptImage && !ideogramKey) {
@@ -234210,18 +234207,39 @@ ${referenceSection}` : ""}`;
             sourceUrl = result2.imageUrl;
             import_fs90.default.writeFileSync(localFilePath, result2.bytes);
           } else {
-            const result2 = await IdeogramService.generateImage({
-              prompt,
-              model,
-              renderingSpeed: snapshot3.renderingSpeed,
-              aspectRatio: snapshot3.aspectRatio,
-              styleType: snapshot3.style,
-              magicPromptOption: snapshot3.magicPrompt
-            });
-            sourceUrl = result2.imageUrl;
-            const imgRes = await fetch(result2.imageUrl);
-            if (!imgRes.ok) throw new Error(`Ideogram-Bild konnte nicht heruntergeladen werden (HTTP ${imgRes.status}).`);
-            import_fs90.default.writeFileSync(localFilePath, Buffer.from(await imgRes.arrayBuffer()));
+            const pending = task.pendingImageDownload;
+            if (pending?.provider === "IDEOGRAM" && pending.model === model && pending.prompt === prompt) {
+              sourceUrl = pending.url;
+            } else {
+              const result2 = await IdeogramService.generateImage({
+                prompt,
+                model,
+                renderingSpeed: snapshot3.renderingSpeed,
+                aspectRatio: snapshot3.aspectRatio,
+                styleType: snapshot3.style,
+                magicPromptOption: typeof snapshot3.magicPrompt === "string" ? snapshot3.magicPrompt : void 0
+              });
+              sourceUrl = result2.imageUrl;
+              if (!this.updateTaskStatus(taskId, { pendingImageDownload: { url: sourceUrl, prompt, model, provider: "IDEOGRAM" } })) {
+                throw new Error("Ideogram-Bildantwort konnte nicht f\xFCr den sp\xE4teren Download gespeichert werden.");
+              }
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "IMAGE_PROVIDER_READY",
+                title: "Ideogram-Bild erzeugt; lokaler Download folgt",
+                content: { provider: "IDEOGRAM", model },
+                metadata: { model, provider: "Ideogram" }
+              });
+            }
+            try {
+              await IdeogramService.downloadImage(sourceUrl, localFilePath);
+            } catch (error) {
+              if (error instanceof ExpiredIdeogramImageError) {
+                this.updateTaskStatus(taskId, { pendingImageDownload: void 0 });
+                throw new Error(`${error.message} Ein erneuter D3-Start erzeugt kostenpflichtig ein neues Bild.`);
+              }
+              throw error;
+            }
           }
           console.log(`[TaskLogService] \u{1F4BE} Bild f\xFCr Task ${taskId} lokal gespeichert: ${localFilePath}`);
           const previewFilePath = import_path84.default.join(designsDir, `${cleanId}.u4-preview.png`);
@@ -234249,6 +234267,7 @@ ${referenceSection}` : ""}`;
             status: "ANALYZING_DESIGN",
             imageUrl: sourceUrl,
             localImagePath: localUrl,
+            pendingImageDownload: void 0,
             hasError: false
           });
           console.log(`[TaskLogService] \u{1F5BC}\uFE0F ${providerLabel} Bild f\xFCr Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
@@ -235135,6 +235154,9 @@ Beantworte die Analysefragen streng als JSON!`;
           throw new Error(`Task ${taskId} nicht gefunden.`);
         }
         if (currentTask.inQueue || ["CANCELLED", "COMPLETED", "UPDATE_QUEUED"].includes(currentTask.status) || currentTask.executionControl && currentTask.executionControl.phase !== "finished") throw new Error("Task ist abgeschlossen, abgebrochen oder bereits in Ausf\xFChrung; Wiederholung gesperrt.");
+        if (["LLM_REQUEST", "IDEOGRAM_REQUEST"].includes(stepType) && currentTask.imageGeneration?.model === "openai/gpt-image-2") {
+          throw new Error("GPT Image 2.0 wird nicht mehr ausgef\xFChrt. Dieser historische Task bleibt lesbar; bitte einen neuen Task mit GPT Image 2.5 anlegen.");
+        }
         if (["RESIZE_REQUEST", "UPDATE_U6_5_RESIZE"].includes(stepType)) throw new Error("Resize bitte \xFCber den gesicherten Finalisierungs-Retry ausf\xFChren.");
         if (stepType === "TRANSLATION_REQUEST") throw new Error("\xDCbersetzung ben\xF6tigt eine fachliche Freigabe; bitte den Task pr\xFCfen.");
         if (!["PREFLIGHT_TM_REQUEST", "LLM_REQUEST", "IDEOGRAM_REQUEST", "ANALYSIS_REQUEST", "LISTING_REQUEST", "TM_CHECK_REQUEST", "TM_REFINE_REQUEST", "VECTORIZE_REQUEST", "SVG_AUDIT_REQUEST", "SVG_REVIEW"].includes(stepType) && !stepType.startsWith("UPDATE_")) throw new Error(`Unbekannter Step-Typ: ${stepType}`);
@@ -235163,7 +235185,9 @@ Beantworte die Analysefragen streng als JSON!`;
           currentTask.resultPrompt = void 0;
           currentTask.hasError = false;
           currentTask.errorDetails = void 0;
-          this.refreshPromptPoolSettings(currentTask);
+          if (!currentTask.d2Snapshot) {
+            currentTask.events.push({ timestamp: (/* @__PURE__ */ new Date()).toISOString(), type: "TASK_HANDOFF", title: "Legacy-D2-Retry", content: "Dieser \xE4ltere Task hat keinen vollst\xE4ndigen D2-Snapshot; aktuelle LLM-Vorgaben werden verwendet." });
+          }
           TaskRepository.updateTask(taskId, currentTask);
           this.generatePromptWithOpenRouter(taskId).catch((err) => {
             console.error(`[TaskLogService] Retry Prompt failed for task ${taskId}:`, err);
@@ -235180,12 +235204,11 @@ Beantworte die Analysefragen streng als JSON!`;
           currentTask.trademarkRefineResult = void 0;
           currentTask.hasError = false;
           currentTask.errorDetails = void 0;
-          const refreshedSettings = this.refreshImageGenerationSettings(currentTask);
           TaskRepository.updateTask(taskId, currentTask);
           this.processTaskWithImageGenerator(taskId).catch((err) => {
             console.error(`[TaskLogService] Retry image generation failed for task ${taskId}:`, err);
           });
-          return { success: true, message: `Bildgenerierung mit ${refreshedSettings.provider} und aktuellen Settings neu gestartet.` };
+          return { success: true, message: `Bildgenerierung mit ${currentTask.imageGeneration?.provider || "dem gespeicherten Provider"} und gespeicherten Vorgaben neu gestartet.` };
         }
         if (stepType === "ANALYSIS_REQUEST") {
           currentTask.status = "ANALYZING_DESIGN";
@@ -235444,12 +235467,12 @@ Beantworte die Analysefragen streng als JSON!`;
           return { success: true, message: `Task ${taskId} wurde abgebrochen und verworfen.` };
         }
         if (params2.action === "REGENERATE_IMAGE") {
+          if (task.imageGeneration?.model === "openai/gpt-image-2") throw new Error("GPT Image 2.0 wird nicht mehr ausgef\xFChrt. Dieser historische Task bleibt lesbar.");
           const promptToUse = params2.updatedPrompt || task.resultPrompt || task.payload?.quote || "";
           task.status = "GENERATING_IMAGE";
           task.checkpoint = void 0;
           task.hasError = false;
           task.errorDetails = void 0;
-          const refreshedSettings = this.refreshImageGenerationSettings(task);
           if (!this.updateTaskStatus(taskId, task)) throw new Error("Neustart konnte nicht gespeichert werden.");
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -235463,7 +235486,7 @@ Beantworte die Analysefragen streng als JSON!`;
           this.processTaskWithImageGenerator(taskId, promptToUse).catch((err) => {
             console.error(`[TaskLogService] Regenerate image failed for task ${taskId}:`, err);
           });
-          return { success: true, message: `Bildgenerierung mit ${refreshedSettings.provider} und aktuellen Settings neu gestartet.` };
+          return { success: true, message: `Bildgenerierung mit ${task.imageGeneration?.provider || "dem gespeicherten Provider"} und gespeicherten Vorgaben neu gestartet.` };
         }
         if (params2.action === "APPROVE") {
           if (params2.answers) {
@@ -240760,7 +240783,7 @@ var UploadScheduleService = class {
 };
 
 // src/server/services/manualFinalizationService.ts
-var import_node_fs2 = __toESM2(require("node:fs"), 1);
+var import_node_fs3 = __toESM2(require("node:fs"), 1);
 var import_node_crypto9 = require("node:crypto");
 init_finalizationService();
 init_queueService();
@@ -240824,12 +240847,12 @@ var ManualFinalizationService = class {
       const assets = result2.resizedAssets;
       const paths = [assets.mugStandardPath, assets.mugBrushPath, assets.drinkwareStandardPath, assets.drinkwareBrushPath, ...Object.values(assets.productVariants || {})];
       for (const file of paths) {
-        const descriptor = import_node_fs2.default.openSync(file, "r");
+        const descriptor = import_node_fs3.default.openSync(file, "r");
         const header = Buffer.alloc(24);
         try {
-          import_node_fs2.default.readSync(descriptor, header, 0, 24, 0);
+          import_node_fs3.default.readSync(descriptor, header, 0, 24, 0);
         } finally {
-          import_node_fs2.default.closeSync(descriptor);
+          import_node_fs3.default.closeSync(descriptor);
         }
         if (header.toString("hex", 0, 8) !== "89504e470d0a1a0a" || !header.readUInt32BE(16) || !header.readUInt32BE(20)) {
           throw new Error(`Ung\xFCltiges PNG: ${file}`);
@@ -240999,9 +241022,9 @@ var import_crypto7 = __toESM2(require("crypto"), 1);
 init_llmService();
 init_settingsService();
 init_taskLogService();
+init_taskRepository();
 var DESIGN_FIELDS = ["niche1", "niche2", "subniche", "quote", "style"];
 var SUGGESTION_FIELDS = new Set(DESIGN_FIELDS);
-var recentCreations = /* @__PURE__ */ new Map();
 var DesignerService = class {
   static normalizeValues(input) {
     const values = Object.fromEntries(DESIGN_FIELDS.map((field) => [
@@ -241042,31 +241065,33 @@ var DesignerService = class {
   static createTask(input, clientIp) {
     const values = this.normalizeValues(input);
     const requestId = typeof input.requestId === "string" && /^[A-Za-z0-9_-]{8,100}$/.test(input.requestId) ? input.requestId : import_crypto7.default.randomUUID();
-    const now = Date.now();
-    for (const [key, entry] of recentCreations) {
-      if (now - entry.createdAt > 10 * 60 * 1e3) recentCreations.delete(key);
+    const imageProvider = input.imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : input.imageProvider === "IDEOGRAM_V4" ? "IDEOGRAM_V4" : "IDEOGRAM";
+    const promptPoolEnabled = Boolean(input.promptPoolEnabled);
+    const payload = { ...values, imageProvider, promptPoolEnabled };
+    const inputHash = import_crypto7.default.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    const existing = TaskRepository.findDesignerRequest(requestId);
+    if (existing) {
+      if (existing.inputHash !== inputHash) throw new Error("Diese Startanfrage wurde bereits mit anderen Eingaben verwendet.");
+      return { task: existing.task, duplicate: true };
     }
-    const existing = recentCreations.get(requestId);
-    if (existing) return { task: existing.task, duplicate: true };
     const task = TaskLogService.createTaskLog({
       source: "DESIGNER",
-      payload: {
-        ...values,
-        imageProvider: input.imageProvider === "GPT_IMAGE_2" ? "GPT_IMAGE_2" : input.imageProvider === "IDEOGRAM_V4" ? "IDEOGRAM_V4" : "IDEOGRAM",
-        promptPoolEnabled: Boolean(input.promptPoolEnabled)
-      },
-      clientIp
+      payload,
+      clientIp,
+      requestIdentity: { id: requestId, inputHash }
     });
-    recentCreations.set(requestId, { createdAt: now, task });
     return { task, duplicate: false };
   }
   static batchCreateTasks(input) {
     const list = Array.isArray(input.concepts) ? input.concepts : [];
     if (list.length === 0) throw new Error("Keine Konzepte zum Erstellen \xFCbergeben.");
+    if (list.length > 10) throw new Error("Maximal 10 Konzepte pro Batch erlaubt.");
+    const normalized = list.map((concept) => this.normalizeValues(concept));
     const results = [];
-    for (const concept of list) {
+    for (const [index, concept] of normalized.entries()) {
       const res = this.createTask({
         ...concept,
+        requestId: list[index].requestId,
         imageProvider: input.imageProvider,
         promptPoolEnabled: input.promptPoolEnabled
       }, input.clientIp || "local");
@@ -241079,11 +241104,59 @@ var DesignerService = class {
 // src/server/services/designerConceptService.ts
 var import_fs92 = __toESM2(require("fs"), 1);
 var import_path86 = __toESM2(require("path"), 1);
+var import_node_crypto10 = require("node:crypto");
 init_llmService();
 init_settingsService();
 var DesignerConceptService = class {
-  static HISTORY_FILE = import_path86.default.resolve(process.cwd(), "data/designer_concept_history.json");
+  // The former file mixed random suggestions with user-directed ideas and cannot be classified safely.
+  static HISTORY_FILE = import_path86.default.resolve(process.cwd(), "data/designer_random_concept_history.json");
   static MAX_HISTORY_ITEMS = 100;
+  static RANDOM_FAMILIES = [
+    "outdoor activities",
+    "music and performing arts",
+    "science and astronomy",
+    "crafts and creative hobbies",
+    "food and cooking",
+    "travel and places",
+    "sports and fitness",
+    "gardening and nature",
+    "family occasions",
+    "animal interests",
+    "skilled trades",
+    "technology and gaming"
+  ];
+  static pickRandomFamilies(count, history) {
+    const recent = history.filter((item) => item.source === "random" && item.family).slice(-40);
+    const lastSeen = /* @__PURE__ */ new Map();
+    recent.forEach((item, index) => lastSeen.set(item.family, index));
+    const candidates = [...this.RANDOM_FAMILIES];
+    const selected = [];
+    while (selected.length < count) {
+      const oldest = Math.min(...candidates.map((family2) => lastSeen.get(family2) ?? -1));
+      const tied = candidates.filter((family2) => (lastSeen.get(family2) ?? -1) === oldest);
+      const family = tied[(0, import_node_crypto10.randomInt)(tied.length)];
+      selected.push(family);
+      candidates.splice(candidates.indexOf(family), 1);
+      if (candidates.length === 0) candidates.push(...this.RANDOM_FAMILIES);
+    }
+    return selected;
+  }
+  static conceptKey(value2) {
+    return value2.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim();
+  }
+  static hasRecentDuplicate(concepts, history) {
+    const recent = history.filter((item) => item.source === "random").slice(-40);
+    const niches = new Set(recent.map((item) => this.conceptKey(item.niche1)));
+    const quotes = new Set(recent.map((item) => this.conceptKey(item.quote)));
+    for (const concept of concepts) {
+      const niche = this.conceptKey(concept.niche1);
+      const quote5 = this.conceptKey(concept.quote);
+      if (niches.has(niche) || quotes.has(quote5)) return true;
+      niches.add(niche);
+      quotes.add(quote5);
+    }
+    return false;
+  }
   /**
    * Extracts the intended concept count from natural language text or requested count.
    * - "ein Design..." -> 1
@@ -241154,18 +241227,20 @@ var DesignerConceptService = class {
   /**
    * Records newly generated concepts to the persistent history (rolling last 100 items).
    */
-  static recordConcepts(concepts) {
+  static recordConcepts(concepts, families = []) {
     if (!concepts || concepts.length === 0) return;
     try {
       const history = this.loadHistory();
       const now = Date.now();
-      for (const concept of concepts) {
+      for (const [index, concept] of concepts.entries()) {
         if (!concept.niche1 || !concept.quote) continue;
         history.push({
           niche1: concept.niche1,
           subniche: concept.subniche || void 0,
           quote: concept.quote,
-          timestamp: now
+          timestamp: now,
+          source: "random",
+          family: families[index]
         });
       }
       const trimmed = history.slice(-this.MAX_HISTORY_ITEMS);
@@ -241192,7 +241267,7 @@ var DesignerConceptService = class {
    */
   static getAvoidanceList(limit = 40) {
     const history = this.loadHistory();
-    const recent = history.slice(-limit);
+    const recent = history.filter((item) => item.source === "random").slice(-limit);
     return recent.map((item) => {
       const sub = item.subniche ? ` (${item.subniche})` : "";
       return `${item.niche1}${sub}: "${item.quote}"`;
@@ -241205,18 +241280,31 @@ var DesignerConceptService = class {
     const count = this.extractConceptCount(options2.prompt, options2.count, Boolean(options2.random));
     const settings = loadSettings();
     const model = LLMService.normalizeModelId(settings.llmModel);
-    const avoidanceList = this.getAvoidanceList(40);
     const isRandom = Boolean(options2.random) || !options2.prompt?.trim();
-    const userPrompt = isRandom ? `Generate ${count} completely fresh, creative, top-converting commercial apparel design concept(s). Choose distinct broad high-volume evergreen niches.` : `User Request: "${options2.prompt.trim()}"
+    const history = isRandom ? this.loadHistory() : [];
+    const families = isRandom ? this.pickRandomFamilies(count, history) : [];
+    const avoidanceList = isRandom ? this.getAvoidanceList(40) : [];
+    const userPrompt = isRandom ? `Generate ${count} fresh commercial apparel concept(s). Use these distinct theme families in order: ${families.map((family, index) => `${index + 1}: ${family}`).join("; ")}. Do not default to pets, jobs or birthdays unless their family is explicitly assigned. Each concept must use its assigned family and a different primary niche.` : `User Request: "${options2.prompt.trim()}"
 
 Generate exactly ${count} distinctive commercial apparel design concept(s) fulfilling this request.`;
-    const concepts = await LLMService.generateDesignerConcepts({
+    let concepts = await LLMService.generateDesignerConcepts({
       userPrompt,
       count,
       model,
       avoidanceList
     });
-    this.recordConcepts(concepts);
+    if (isRandom && (concepts.length !== count || this.hasRecentDuplicate(concepts, history))) {
+      concepts = await LLMService.generateDesignerConcepts({
+        userPrompt: `${userPrompt}
+
+The prior response was incomplete or repeated a recent niche or slogan. Return exactly ${count} different concepts with different niches and slogans.`,
+        count,
+        model,
+        avoidanceList
+      });
+      if (concepts.length !== count || this.hasRecentDuplicate(concepts, history)) throw new Error("Zufallskonzepte sind unvollst\xE4ndig oder wiederholen zuletzt verwendete Nischen oder Slogans. Bitte erneut versuchen.");
+    }
+    if (isRandom) this.recordConcepts(concepts, families);
     return {
       concepts,
       model,
@@ -242552,7 +242640,7 @@ app.post("/api/v1/designer/generate", async (req, res) => {
     res.json({ success: true, taskId: result2.task.id, task: result2.task, duplicate: result2.duplicate });
   } catch (err) {
     const message = err?.message || "Task konnte nicht angelegt werden.";
-    res.status(message === "Niche 1 ist erforderlich." ? 400 : 500).json({ success: false, error: message });
+    res.status(message.includes("anderen Eingaben") ? 409 : message === "Niche 1 ist erforderlich." ? 400 : 500).json({ success: false, error: message });
   }
 });
 app.post("/api/v1/designer/concepts/generate", async (req, res) => {

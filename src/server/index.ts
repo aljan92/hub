@@ -1144,7 +1144,7 @@ app.post('/api/v1/designer/generate', async (req, res) => {
     res.json({ success: true, taskId: result.task.id, task: result.task, duplicate: result.duplicate });
   } catch (err: any) {
     const message = err?.message || 'Task konnte nicht angelegt werden.';
-    res.status(message === 'Niche 1 ist erforderlich.' ? 400 : 500).json({ success: false, error: message });
+    res.status(message.includes('anderen Eingaben') ? 409 : message === 'Niche 1 ist erforderlich.' ? 400 : 500).json({ success: false, error: message });
   }
 });
 

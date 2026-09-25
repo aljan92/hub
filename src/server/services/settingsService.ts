@@ -97,25 +97,16 @@ export function resolveImageProvider(
 }
 
 export function getEffectiveGptImageSettings(settings: Partial<AppSettings>): {
-  model: 'openai/gpt-image-2' | 'openai/gpt-image-2.5-sunburst';
+  model: 'openai/gpt-image-2.5-sunburst';
   quality: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   aspectRatio: string;
   background: 'auto' | 'opaque' | 'transparent' | 'deep_blue';
 } {
-  const model = settings.gptImageModel === 'openai/gpt-image-2' ? 'openai/gpt-image-2' : 'openai/gpt-image-2.5-sunburst';
-  if (model === 'openai/gpt-image-2.5-sunburst') {
-    return {
-      model,
-      quality: settings.gptImage25Quality || settings.gptImageQuality || 'high',
-      aspectRatio: settings.gptImage25AspectRatio || settings.gptImageAspectRatio || '3:4',
-      background: settings.gptImage25Background || settings.gptImageBackground || 'transparent'
-    };
-  }
   return {
-    model: 'openai/gpt-image-2',
-    quality: settings.gptImageQuality || 'high',
-    aspectRatio: settings.gptImageAspectRatio || '3:4',
-    background: settings.gptImageBackground || 'transparent'
+    model: 'openai/gpt-image-2.5-sunburst',
+    quality: settings.gptImage25Quality || 'high',
+    aspectRatio: settings.gptImage25AspectRatio || '3:4',
+    background: settings.gptImage25Background || 'transparent'
   };
 }
 
@@ -266,7 +257,7 @@ export function loadSettings(): AppSettings {
 
 export function saveSettings(newSettings: Partial<AppSettings>): AppSettings {
   const current = loadSettings();
-  const merged = { ...current, ...newSettings };
+  const merged = { ...current, ...newSettings, gptImageModel: 'openai/gpt-image-2.5-sunburst' as const };
   cachedSettings = merged;
   const filePath = getSettingsFilePath();
   try {

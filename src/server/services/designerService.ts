@@ -2,10 +2,10 @@ import crypto from 'crypto';
 import { LLMService, type DesignerSuggestionField } from './llmService';
 import { loadSettings } from './settingsService';
 import { TaskLogService } from './taskLogService';
+import { TaskRepository } from '../storage/taskRepository';
 
 const DESIGN_FIELDS = ['niche1', 'niche2', 'subniche', 'quote', 'style'] as const;
 const SUGGESTION_FIELDS = new Set<string>(DESIGN_FIELDS);
-const recentCreations = new Map<string, { createdAt: number; task: any }>();
 
 export type DesignerValues = Record<(typeof DESIGN_FIELDS)[number], string> & {
   customInstruction: string;
@@ -57,26 +57,23 @@ export class DesignerService {
 
   static createTask(input: Record<string, unknown>, clientIp: string) {
     const values = this.normalizeValues(input);
-    const requestId = typeof input.requestId === 'string' && /^[A-Za-z0-9_-]{8,100}$/.test(input.requestId)
-      ? input.requestId
-      : crypto.randomUUID();
-    const now = Date.now();
-    for (const [key, entry] of recentCreations) {
-      if (now - entry.createdAt > 10 * 60 * 1000) recentCreations.delete(key);
+    const requestId = typeof input.requestId === 'string' && /^[A-Za-z0-9_-]{8,100}$/.test(input.requestId) ? input.requestId : crypto.randomUUID();
+    const imageProvider = input.imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : (input.imageProvider === 'IDEOGRAM_V4' ? 'IDEOGRAM_V4' : 'IDEOGRAM');
+    const promptPoolEnabled = Boolean(input.promptPoolEnabled);
+    const payload = { ...values, imageProvider, promptPoolEnabled };
+    const inputHash = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+    const existing = TaskRepository.findDesignerRequest(requestId);
+    if (existing) {
+      if (existing.inputHash !== inputHash) throw new Error('Diese Startanfrage wurde bereits mit anderen Eingaben verwendet.');
+      return { task: existing.task, duplicate: true };
     }
-    const existing = recentCreations.get(requestId);
-    if (existing) return { task: existing.task, duplicate: true };
 
     const task = TaskLogService.createTaskLog({
       source: 'DESIGNER',
-      payload: {
-        ...values,
-        imageProvider: input.imageProvider === 'GPT_IMAGE_2' ? 'GPT_IMAGE_2' : (input.imageProvider === 'IDEOGRAM_V4' ? 'IDEOGRAM_V4' : 'IDEOGRAM'),
-        promptPoolEnabled: Boolean(input.promptPoolEnabled)
-      },
-      clientIp
+      payload,
+      clientIp,
+      requestIdentity: { id: requestId, inputHash }
     });
-    recentCreations.set(requestId, { createdAt: now, task });
     return { task, duplicate: false };
   }
 
@@ -88,10 +85,13 @@ export class DesignerService {
   }) {
     const list = Array.isArray(input.concepts) ? input.concepts : [];
     if (list.length === 0) throw new Error('Keine Konzepte zum Erstellen übergeben.');
+    if (list.length > 10) throw new Error('Maximal 10 Konzepte pro Batch erlaubt.');
+    const normalized = list.map(concept => this.normalizeValues(concept));
     const results: Array<{ task: any; duplicate: boolean }> = [];
-    for (const concept of list) {
+    for (const [index, concept] of normalized.entries()) {
       const res = this.createTask({
         ...concept,
+        requestId: list[index].requestId,
         imageProvider: input.imageProvider,
         promptPoolEnabled: input.promptPoolEnabled
       }, input.clientIp || 'local');
