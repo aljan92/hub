@@ -663,8 +663,10 @@ export const PromptLogView: React.FC<{ isActive: boolean }> = ({ isActive }) => 
       const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/${action}`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Task-Steuerung fehlgeschlagen');
-      setTasks(prev => prev.map(task => task.id === taskId ? { ...task, status: data.status } : task));
-      setSelectedTaskDetail(prev => prev?.id === taskId ? { ...prev, status: data.status } : prev);
+      // The pipeline can leave WAITING before this response reaches the browser.
+      // Do not overwrite a newer WebSocket update with the response's old status.
+      void fetchTasks();
+      if (selectedTaskIdRef.current === taskId) scheduleTaskDetailRefresh(taskId);
     } catch (err: any) {
       alert(err.message);
     } finally {
