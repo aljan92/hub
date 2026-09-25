@@ -235083,6 +235083,7 @@ Beantworte die Analysefragen streng als JSON!`;
         }
         if (stepType === "ANALYSIS_REQUEST") {
           currentTask.status = "ANALYZING_DESIGN";
+          currentTask.checkpoint = void 0;
           currentTask.analysisResult = void 0;
           currentTask.hasError = false;
           currentTask.errorDetails = void 0;

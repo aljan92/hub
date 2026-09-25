@@ -47,6 +47,15 @@ try {
   assert.equal(TaskRepository.getTaskById('#991-D')?.status, 'ERROR');
   assert.equal(TaskRepository.getTaskById('#991-D')?.executionControl?.phase, 'finished');
   assert.equal(d5Runs, 0, 'Failed vision must not enter downstream steps');
+
+  const staleReview = createTask('#992-D');
+  staleReview.status = 'AWAITING_SVG_REVIEW';
+  staleReview.checkpoint = 'SVG_REVIEW';
+  staleReview.executionControl = { phase: 'finished', nextStep: 'D7', attempt: 1, updatedAt: new Date().toISOString() };
+  TaskRepository.createTask(staleReview);
+  TaskLogService.analyzeDesignWithOpenRouter = async () => undefined;
+  await TaskLogService.retryFromStep('#992-D', 'ANALYSIS_REQUEST');
+  assert.equal(TaskRepository.getTaskById('#992-D')?.checkpoint ?? null, null, 'D4 retry clears a stale SVG review');
 } finally {
   TaskLogService.analyzeDesignWithOpenRouter = originalAnalyze;
   DesignPipelineService.stepD5_GenerateListing = originalD5;

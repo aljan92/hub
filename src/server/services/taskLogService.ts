@@ -1992,6 +1992,7 @@ export class TaskLogService {
     if (stepType === 'ANALYSIS_REQUEST') {
 
       currentTask.status = 'ANALYZING_DESIGN';
+      currentTask.checkpoint = undefined;
       currentTask.analysisResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
