@@ -241636,7 +241636,7 @@ async function updaterRequest(endpoint, method = "GET") {
   const response2 = await fetch(`http://mba-hub-updater:3001/${endpoint}`, {
     method,
     headers: { "x-updater-token": token },
-    signal: AbortSignal.timeout(5e3)
+    signal: AbortSignal.timeout(3e4)
   });
   const data = await response2.json();
   return { status: response2.status, data };

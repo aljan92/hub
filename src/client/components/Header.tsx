@@ -173,6 +173,42 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
   const handleTriggerUpdate = async () => {
     setIsUpdating(true);
     setUpdateError(null);
+    setUpdatePhase('queued');
+    let polls = 0;
+    let polling = false;
+    const timer = window.setInterval(async () => {
+      if (polling) return;
+      polling = true;
+      polls += 1;
+      try {
+        const statusResponse = await fetch('/api/v1/system/update/status', { signal: AbortSignal.timeout(15000) });
+        if (!statusResponse.ok) throw new Error('Status nicht erreichbar');
+        const status = await statusResponse.json();
+        if (status.phase === 'idle' && polls < 20) return;
+        if (status.phase === 'idle') {
+          window.clearInterval(timer);
+          setIsUpdating(false);
+          setUpdatePhase(null);
+          setUpdateError('Updater hat keinen Auftrag gestartet. Bitte erneut versuchen.');
+          return;
+        }
+        setUpdatePhase(status.phase);
+        if (['complete', 'unchanged', 'failed', 'blocked', 'rolled_back', 'rollback_failed'].includes(status.phase)) {
+          window.clearInterval(timer);
+          setIsUpdating(false);
+          if (status.phase === 'complete' || status.phase === 'unchanged') window.location.reload();
+          else setUpdateError(status.error || 'Update fehlgeschlagen. Der bisherige Stand wurde nach Möglichkeit wiederhergestellt.');
+        }
+      } catch {
+        if (polls >= 450) {
+          window.clearInterval(timer);
+          setIsUpdating(false);
+          setUpdateError('Update-Status über längere Zeit nicht erreichbar. Bitte Dashboard neu laden und Version prüfen.');
+        }
+      } finally {
+        polling = false;
+      }
+    }, 2000);
     try {
       const res = await fetch('/api/v1/system/update', {
         method: 'POST',
@@ -180,29 +216,18 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
         body: JSON.stringify({})
       });
       const data = await res.json();
-      if (res.status === 202) {
-        setUpdatePhase('queued');
-        const timer = window.setInterval(async () => {
-          try {
-            const statusResponse = await fetch('/api/v1/system/update/status');
-            if (!statusResponse.ok) return;
-            const status = await statusResponse.json();
-            setUpdatePhase(status.phase);
-            if (['complete', 'unchanged', 'failed', 'blocked', 'rolled_back', 'rollback_failed'].includes(status.phase)) {
-              window.clearInterval(timer);
-              setIsUpdating(false);
-              if (status.phase === 'complete' || status.phase === 'unchanged') window.location.reload();
-              else setUpdateError(status.error || 'Update fehlgeschlagen. Der bisherige Stand wurde nach Möglichkeit wiederhergestellt.');
-            }
-          } catch { /* The app may be restarting. */ }
-        }, 2000);
-      } else {
+      if (res.status === 202 || (res.status === 409 && data.error === 'update_in_progress')) return;
+      if (res.status === 409 && (data.activeTaskId || data.activeUpload)) {
+        window.clearInterval(timer);
         setIsUpdating(false);
-        setUpdateError(data.error || 'Update konnte nicht gestartet werden.');
+        setUpdatePhase(null);
+        setUpdateError(data.error || 'Laufende Arbeit blockiert das Update.');
+        return;
       }
+      // A timed out response can still mean the updater accepted the request.
+      // The status poll resolves that ambiguity before an error is shown.
     } catch (err: any) {
-      setIsUpdating(false);
-      setUpdateError('Netzwerkfehler während des Update-Prozesses.');
+      // Keep polling: the app may have restarted after accepting the update.
     }
   };
 
