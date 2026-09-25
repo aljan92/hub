@@ -153,9 +153,9 @@ const renderSafeText = (val: any): string => {
 export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
   const [queueState, setQueueState] = useState<QueueState>({
     items: [],
-    freeDailySlots: 200,
+    freeDailySlots: 0,
     usedSlotsToday: 0,
-    totalDailySlots: 200,
+    totalDailySlots: 0,
     scheduledSlotsToday: 0,
     uploadScheduleTime: '04:00',
     uploadScheduleEnabled: false,
@@ -173,6 +173,11 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
   const updateTargetCountRef = useRef<number>(10);
   const updateTargetSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateTargetSaveRunningRef = useRef<boolean>(false);
+  const updateTargetRequestInFlightRef = useRef(false);
+  const maxDropRef = useRef(queueState.maxDropPerDesign);
+  const maxDropSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const maxDropSaveRunningRef = useRef(false);
+  const maxDropRequestInFlightRef = useRef(false);
   const [backfillToast, setBackfillToast] = useState<{ message: string; success: boolean } | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [itemLanguageMap, setItemLanguageMap] = useState<Record<string, string>>({});
@@ -289,7 +294,7 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
       if (data.success) {
         // A GET that started before a mode PATCH must not overwrite its newer
         // response. The next poll will retrieve the committed state.
-        if (modeSaveRunningRef.current || updateTargetSaveRunningRef.current) return;
+        if (modeSaveRunningRef.current || updateTargetSaveRunningRef.current || maxDropSaveRunningRef.current) return;
         if (data.uploadMode) {
           confirmedModeRef.current = data.uploadMode;
           setGlobalMode(data.uploadMode);
@@ -350,7 +355,44 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
 
   useEffect(() => () => {
     if (updateTargetSaveTimerRef.current) clearTimeout(updateTargetSaveTimerRef.current);
+    if (maxDropSaveTimerRef.current) clearTimeout(maxDropSaveTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    if (!maxDropSaveRunningRef.current) maxDropRef.current = queueState.maxDropPerDesign;
+  }, [queueState.maxDropPerDesign]);
+
+  const persistUpdateTargetCount = async () => {
+    if (updateTargetRequestInFlightRef.current) return;
+    updateTargetRequestInFlightRef.current = true;
+    try {
+      while (true) {
+        const requested = updateTargetCountRef.current;
+        const response = await fetch('/api/v1/queue/settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ queueUpdateTargetCount: requested })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Vorhaltewert konnte nicht gespeichert werden.');
+        if (requested === updateTargetCountRef.current) {
+          if (data.state) setQueueState(prev => ({
+            ...data.state,
+            maxDropPerDesign: maxDropSaveRunningRef.current ? prev.maxDropPerDesign : data.state.maxDropPerDesign
+          }));
+          break;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to update target count:', e);
+    } finally {
+      updateTargetRequestInFlightRef.current = false;
+      updateTargetSaveRunningRef.current = false;
+      setSavingTargetCount(false);
+      updateTargetSaveTimerRef.current = null;
+      void fetchQueue();
+    }
+  };
 
   const handleAdjustUpdateTargetCount = (delta: number) => {
     const clamped = Math.max(1, Math.min(50, updateTargetCountRef.current + delta));
@@ -359,25 +401,9 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
     setUpdateTargetCount(clamped);
     setSavingTargetCount(true);
     if (updateTargetSaveTimerRef.current) clearTimeout(updateTargetSaveTimerRef.current);
-    updateTargetSaveTimerRef.current = setTimeout(async () => {
-      try {
-        const response = await fetch('/api/v1/queue/settings', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ queueUpdateTargetCount: updateTargetCountRef.current })
-        });
-        const data = await response.json();
-        if (!response.ok || !data.success) throw new Error(data.error || 'Vorhaltewert konnte nicht gespeichert werden.');
-        if (data.state) setQueueState(data.state);
-      } catch (e) {
-        console.warn('Failed to update target count:', e);
-      } finally {
-        updateTargetSaveRunningRef.current = false;
-        setSavingTargetCount(false);
-        updateTargetSaveTimerRef.current = null;
-        void fetchQueue();
-      }
-    }, 300);
+    if (!updateTargetRequestInFlightRef.current) {
+      updateTargetSaveTimerRef.current = setTimeout(() => { void persistUpdateTargetCount(); }, 300);
+    }
   };
 
   const handleToggleAutoBackfill = async (enabled: boolean) => {
@@ -549,6 +575,48 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
       }
     } catch (err) {
       console.error('Settings update error:', err);
+    }
+  };
+
+  const persistMaxDrop = async () => {
+    if (maxDropRequestInFlightRef.current) return;
+    maxDropRequestInFlightRef.current = true;
+    try {
+      while (true) {
+        const requested = maxDropRef.current;
+        const res = await fetch('/api/v1/queue/settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ maxDropPerDesign: requested })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Kürzungs-Toleranz konnte nicht gespeichert werden.');
+        if (requested === maxDropRef.current) {
+          if (data.state) setQueueState(prev => ({
+            ...data.state,
+            maxDropPerDesign: maxDropRef.current
+          }));
+          break;
+        }
+      }
+    } catch (err) {
+      console.warn('[Queue] Failed to update max drop:', err);
+    } finally {
+      maxDropRequestInFlightRef.current = false;
+      maxDropSaveRunningRef.current = false;
+      maxDropSaveTimerRef.current = null;
+      void fetchQueue();
+    }
+  };
+
+  const handleAdjustMaxDrop = (nextValue: number) => {
+    const next = Math.max(0, Math.min(50, nextValue));
+    maxDropRef.current = next;
+    maxDropSaveRunningRef.current = true;
+    setQueueState(prev => ({ ...prev, maxDropPerDesign: next }));
+    if (maxDropSaveTimerRef.current) clearTimeout(maxDropSaveTimerRef.current);
+    if (!maxDropRequestInFlightRef.current) {
+      maxDropSaveTimerRef.current = setTimeout(() => { void persistMaxDrop(); }, 300);
     }
   };
 
@@ -1089,7 +1157,7 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
               </div>
               <div className="flex items-baseline space-x-2">
                 <span className="text-2xl font-bold text-slate-100 font-mono">
-                  {queueState.usedSlotsToday || 0} von {queueState.totalDailySlots || 200}
+                  {queueState.totalDailySlots > 0 ? `${queueState.usedSlotsToday} von ${queueState.totalDailySlots}` : 'Amazon-Daten fehlen'}
                 </span>
                 <span className="text-xs text-slate-400">verbraucht</span>
               </div>
@@ -1106,7 +1174,7 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
                 />
               </div>
               <div className="text-[11px] text-slate-400 mt-2 flex items-center justify-between">
-                <span>{queueState.freeDailySlots || 0} freie Slots heute</span>
+                <span>{queueState.totalDailySlots > 0 ? `${queueState.freeDailySlots} freie Slots heute` : 'Session 1 prüfen oder Slots aktualisieren'}</span>
                 {currentMode === 'draft' && (
                   <span className="text-primary-300 font-medium">🟡 Drafts aktiv</span>
                 )}
@@ -1318,8 +1386,7 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
                 <div className="flex items-center space-x-1 bg-slate-900 border border-slate-700 rounded-lg p-0.5">
                   <button
                     onClick={() => {
-                      const next = Math.max(0, queueState.maxDropPerDesign - 1);
-                      handleUpdateSettings({ maxDropPerDesign: next });
+                      handleAdjustMaxDrop(maxDropRef.current - 1);
                     }}
                     className="w-6 h-6 flex items-center justify-center rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
                     title="Toleranz verringern"
@@ -1334,15 +1401,14 @@ export const QueueView: React.FC<{ isActive?: boolean }> = ({ isActive = true })
                     value={queueState.maxDropPerDesign}
                     onChange={(e) => {
                       const val = Math.max(0, Math.min(50, Number(e.target.value) || 0));
-                      handleUpdateSettings({ maxDropPerDesign: val });
+                      handleAdjustMaxDrop(val);
                     }}
                     className="w-8 text-center bg-transparent text-xs font-mono font-bold text-slate-200 focus:outline-none"
                   />
 
                   <button
                     onClick={() => {
-                      const next = Math.min(50, queueState.maxDropPerDesign + 1);
-                      handleUpdateSettings({ maxDropPerDesign: next });
+                      handleAdjustMaxDrop(maxDropRef.current + 1);
                     }}
                     className="w-6 h-6 flex items-center justify-center rounded text-xs font-bold text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
                     title="Toleranz erhöhen"

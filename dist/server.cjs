@@ -29273,7 +29273,7 @@ var require_main = __commonJS2({
   "node_modules/dotenv/lib/main.js"(exports2, module3) {
     var fs27 = require("fs");
     var path25 = require("path");
-    var os = require("os");
+    var os2 = require("os");
     var crypto7 = require("crypto");
     var packageJson = require_package();
     var version5 = packageJson.version;
@@ -29396,7 +29396,7 @@ var require_main = __commonJS2({
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path25.join(os.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path25.join(os2.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options2) {
       const debug17 = Boolean(options2 && options2.debug);
@@ -221519,6 +221519,40 @@ var init_playwright3 = __esm2({
 });
 
 // src/server/services/browserSessionService.ts
+function clearStaleProfileSingleton(profileDir2, hostname = import_os29.default.hostname()) {
+  const lock2 = import_path72.default.join(profileDir2, "SingletonLock");
+  if (!import_fs77.default.existsSync(profileDir2) || !import_fs77.default.lstatSync(profileDir2).isDirectory()) return false;
+  let owner;
+  try {
+    if (!import_fs77.default.lstatSync(lock2).isSymbolicLink()) return false;
+    owner = import_fs77.default.readlinkSync(lock2);
+  } catch {
+    return false;
+  }
+  const match = owner.match(/^(.+)-(\d+)$/);
+  if (!match) return false;
+  const [, ownerHost, pidText] = match;
+  if (ownerHost === hostname) {
+    try {
+      process.kill(Number(pidText), 0);
+      return false;
+    } catch (error) {
+      if (error?.code !== "ESRCH") return false;
+    }
+  } else {
+    const socket = import_path72.default.join(profileDir2, "SingletonSocket");
+    if (import_fs77.default.existsSync(socket)) return false;
+  }
+  for (const name of ["SingletonLock", "SingletonCookie", "SingletonSocket"]) {
+    const file = import_path72.default.join(profileDir2, name);
+    try {
+      if (import_fs77.default.lstatSync(file).isSymbolicLink()) import_fs77.default.unlinkSync(file);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  return true;
+}
 function findChromiumExecutable() {
   if (process.env.CHROME_BIN && import_fs77.default.existsSync(process.env.CHROME_BIN)) {
     return process.env.CHROME_BIN;
@@ -221561,13 +221595,14 @@ function findChromiumExecutable() {
   }
   return void 0;
 }
-var import_path72, import_fs77, BrowserSessionService;
+var import_path72, import_fs77, import_os29, BrowserSessionService;
 var init_browserSessionService = __esm2({
   "src/server/services/browserSessionService.ts"() {
     "use strict";
     init_playwright3();
     import_path72 = __toESM2(require("path"), 1);
     import_fs77 = __toESM2(require("fs"), 1);
+    import_os29 = __toESM2(require("os"), 1);
     BrowserSessionService = class _BrowserSessionService {
       static context = null;
       static sessions = /* @__PURE__ */ new Map();
@@ -221633,7 +221668,13 @@ var init_browserSessionService = __esm2({
           if (executablePath) {
             launchOptions.executablePath = executablePath;
           }
-          this.context = await chromium.launchPersistentContext(profileDir2, launchOptions);
+          try {
+            this.context = await chromium.launchPersistentContext(profileDir2, launchOptions);
+          } catch (error) {
+            if (!String(error?.message || error).includes("profile appears to be in use") || !clearStaleProfileSingleton(profileDir2)) throw error;
+            console.warn("[BrowserSession] Cleared stale Chromium profile lock from previous container; retrying launch once.");
+            this.context = await chromium.launchPersistentContext(profileDir2, launchOptions);
+          }
           await this.context.addInitScript(() => {
             Object.defineProperty(navigator, "webdriver", {
               get: () => void 0
@@ -223632,7 +223673,7 @@ var init_queueService = __esm2({
       static items = [];
       static isLoaded = false;
       static isStorageCorrupted = false;
-      static dailySlotsInfo = { free: 200, used: 0, total: 200 };
+      static dailySlotsInfo = { free: 0, used: 0, total: 0 };
       static setCustomQueuePath(customPath) {
         if (customPath) {
           this.queueFilePath = import_path74.default.resolve(customPath);
@@ -241617,7 +241658,7 @@ app.use((req, res, next) => {
   });
 });
 var uploadQueue = [];
-var dailySlotStats = { used: 0, total: 100 };
+var dailySlotStats = { used: 0, total: 0, free: 0 };
 var activityLog = [
   {
     time: (/* @__PURE__ */ new Date()).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),

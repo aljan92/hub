@@ -1,6 +1,38 @@
 import { chromium, BrowserContext, Page, CDPSession } from 'playwright';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
+
+/** Chromium keeps these symlinks in its persistent profile. A container
+ * replacement gets a new hostname while retaining the bind-mounted profile.
+ * Recover only a lock whose owner cannot be reached from this container. */
+export function clearStaleProfileSingleton(profileDir: string, hostname = os.hostname()): boolean {
+  const lock = path.join(profileDir, 'SingletonLock');
+  if (!fs.existsSync(profileDir) || !fs.lstatSync(profileDir).isDirectory()) return false;
+  let owner: string;
+  try {
+    if (!fs.lstatSync(lock).isSymbolicLink()) return false;
+    owner = fs.readlinkSync(lock);
+  } catch { return false; }
+  const match = owner.match(/^(.+)-(\d+)$/);
+  if (!match) return false;
+  const [, ownerHost, pidText] = match;
+  if (ownerHost === hostname) {
+    try { process.kill(Number(pidText), 0); return false; }
+    catch (error: any) { if (error?.code !== 'ESRCH') return false; }
+  } else {
+    const socket = path.join(profileDir, 'SingletonSocket');
+    if (fs.existsSync(socket)) return false;
+  }
+  // Never follow symlinks; remove only Chromium's singleton markers.
+  for (const name of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+    const file = path.join(profileDir, name);
+    try { if (fs.lstatSync(file).isSymbolicLink()) fs.unlinkSync(file); } catch (error: any) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
+  return true;
+}
 
 export type BrowserSessionType = 'sync' | 'upload';
 
@@ -139,7 +171,14 @@ export class BrowserSessionService {
         launchOptions.executablePath = executablePath;
       }
 
-      this.context = await chromium.launchPersistentContext(profileDir, launchOptions);
+      try {
+        this.context = await chromium.launchPersistentContext(profileDir, launchOptions);
+      } catch (error: any) {
+        if (!String(error?.message || error).includes('profile appears to be in use')
+          || !clearStaleProfileSingleton(profileDir)) throw error;
+        console.warn('[BrowserSession] Cleared stale Chromium profile lock from previous container; retrying launch once.');
+        this.context = await chromium.launchPersistentContext(profileDir, launchOptions);
+      }
 
       // Inject Mac Stealth script to evade Amazon / AWS bot detection
       await this.context.addInitScript(() => {

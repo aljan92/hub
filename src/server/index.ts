@@ -124,7 +124,7 @@ app.use((req, res, next) => {
 
 // In-Memory state for Queue and Stats
 let uploadQueue: any[] = [];
-let dailySlotStats = { used: 0, total: 100 };
+let dailySlotStats = { used: 0, total: 0, free: 0 };
 
 interface ActivityEvent {
   time: string;

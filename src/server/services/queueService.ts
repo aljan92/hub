@@ -222,7 +222,7 @@ export class QueueService {
   private static items: QueueItem[] = [];
   private static isLoaded = false;
   private static isStorageCorrupted = false;
-  private static dailySlotsInfo = { free: 200, used: 0, total: 200 };
+  private static dailySlotsInfo = { free: 0, used: 0, total: 0 };
 
   public static setCustomQueuePath(customPath?: string): void {
     if (customPath) {

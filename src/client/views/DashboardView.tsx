@@ -135,7 +135,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
           </div>
           <div className="flex items-baseline space-x-2 pt-1">
             <span className="text-2xl sm:text-3xl font-extrabold text-white font-mono">
-              {statsData?.slots ? `${statsData.slots.used} von ${statsData.slots.total}` : '0 von 200'}
+              {statsData?.slots?.total ? `${statsData.slots.used} von ${statsData.slots.total}` : 'Amazon-Daten fehlen'}
             </span>
           </div>
         </div>
