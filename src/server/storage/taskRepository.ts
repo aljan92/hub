@@ -10,6 +10,7 @@ import {
   TASK_STATUSES_AWAITING_USER_ACTION
 } from '../../types/tasks';
 import { loadJsonWithBackupRecovery } from '../utils/atomicFileStorage';
+import { measureOperation } from '../services/operationalMetrics';
 
 export interface TaskPageOptions {
   limit?: number;
@@ -695,10 +696,12 @@ export class TaskRepository {
    * Full reconstruction of DesignTaskLog from SQLite.
    */
   public static getTaskById(taskId: string): DesignTaskLog | null {
-    const db = this.getDb();
-    const row: any = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
-    if (!row) return null;
-    return this.rowToTask(row);
+    return measureOperation('sqlite.task.detail', () => {
+      const db = this.getDb();
+      const row: any = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+      if (!row) return null;
+      return this.rowToTask(row);
+    });
   }
 
   /**
@@ -722,6 +725,7 @@ export class TaskRepository {
    * Keyset pagination query directly from SQLite (WHERE counter < ? ORDER BY counter DESC LIMIT 21).
    */
   public static getTaskSummariesPage(options: TaskPageOptions = {}): TaskPageResult {
+    return measureOperation('sqlite.task.summaries', () => {
     const db = this.getDb();
     const limit = Math.max(1, Math.min(100, options.limit || 20));
     const queryLimit = limit + 1; // 21st record determines hasMore
@@ -790,6 +794,7 @@ export class TaskRepository {
       hasMore,
       nextCursor
     };
+    });
   }
 
   /**

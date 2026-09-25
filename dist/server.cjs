@@ -287,18 +287,96 @@ var init_atomicFileStorage = __esm2({
   }
 });
 
+// src/server/services/operationalMetrics.ts
+function percentile(values, percent) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return Math.round(sorted[Math.ceil(percent * sorted.length) - 1] * 100) / 100;
+}
+function recordOperation(name, durationMs, responseBytes = 0, failed = false) {
+  let metric = series.get(name);
+  if (!metric) {
+    metric = { count: 0, failures: 0, durationsMs: [], responseBytes: [] };
+    series.set(name, metric);
+  }
+  metric.count += 1;
+  if (failed) metric.failures += 1;
+  metric.durationsMs.push(durationMs);
+  metric.responseBytes.push(responseBytes);
+  if (metric.durationsMs.length > MAX_SAMPLES) metric.durationsMs.shift();
+  if (metric.responseBytes.length > MAX_SAMPLES) metric.responseBytes.shift();
+}
+function measureOperation(name, work) {
+  const started = import_node_perf_hooks.performance.now();
+  try {
+    const result2 = work();
+    recordOperation(name, import_node_perf_hooks.performance.now() - started);
+    return result2;
+  } catch (error) {
+    recordOperation(name, import_node_perf_hooks.performance.now() - started, 0, true);
+    throw error;
+  }
+}
+function recordHttpRequest(req, res, next) {
+  if (!req.path.startsWith("/api/")) return next();
+  const requestId = (0, import_node_crypto2.randomUUID)();
+  const started = import_node_perf_hooks.performance.now();
+  res.setHeader("X-Request-Id", requestId);
+  res.once("finish", () => {
+    const routePath = req.route?.path;
+    const route2 = typeof routePath === "string" ? routePath : "<unmatched>";
+    const name = `http ${req.method} ${route2}`;
+    const durationMs = import_node_perf_hooks.performance.now() - started;
+    const responseBytes = Number(res.getHeader("Content-Length")) || 0;
+    recordOperation(name, durationMs, responseBytes, res.statusCode >= 500);
+    if (durationMs >= 1e3) {
+      console.warn(`[HTTP Slow] ${requestId} ${name} ${res.statusCode} ${Math.round(durationMs)}ms ${responseBytes}B`);
+    }
+  });
+  next();
+}
+function getOperationalMetrics() {
+  return {
+    windowSamples: MAX_SAMPLES,
+    eventLoopDelayMs: {
+      p95: Math.round(eventLoop.percentile(95) / 1e6 * 100) / 100,
+      max: Math.round(eventLoop.max / 1e6 * 100) / 100
+    },
+    operations: [...series.entries()].map(([name, metric]) => ({
+      name,
+      count: metric.count,
+      failures: metric.failures,
+      durationMs: { p50: percentile(metric.durationsMs, 0.5), p95: percentile(metric.durationsMs, 0.95) },
+      responseBytes: { p95: percentile(metric.responseBytes, 0.95) }
+    }))
+  };
+}
+var import_node_crypto2, import_node_perf_hooks, MAX_SAMPLES, series, eventLoop;
+var init_operationalMetrics = __esm2({
+  "src/server/services/operationalMetrics.ts"() {
+    "use strict";
+    import_node_crypto2 = require("node:crypto");
+    import_node_perf_hooks = require("node:perf_hooks");
+    MAX_SAMPLES = 100;
+    series = /* @__PURE__ */ new Map();
+    eventLoop = (0, import_node_perf_hooks.monitorEventLoopDelay)({ resolution: 20 });
+    eventLoop.enable();
+  }
+});
+
 // src/server/storage/taskRepository.ts
-var import_node_crypto2, import_fs72, import_path67, import_node_sqlite, TaskRepository;
+var import_node_crypto3, import_fs72, import_path67, import_node_sqlite, TaskRepository;
 var init_taskRepository = __esm2({
   "src/server/storage/taskRepository.ts"() {
     "use strict";
-    import_node_crypto2 = require("node:crypto");
+    import_node_crypto3 = require("node:crypto");
     init_reviewVersion();
     import_fs72 = __toESM2(require("fs"), 1);
     import_path67 = __toESM2(require("path"), 1);
     import_node_sqlite = require("node:sqlite");
     init_tasks();
     init_atomicFileStorage();
+    init_operationalMetrics();
     TaskRepository = class {
       static db = null;
       static dbPath = import_path67.default.resolve(process.cwd(), "data", "mba_hub.sqlite");
@@ -808,7 +886,7 @@ var init_taskRepository = __esm2({
             if (key === "payload" || key === "reviewVersion") continue;
             existingTask[key] = value2;
           }
-          existingTask.reviewVersion = expectedReviewVersion !== void 0 && consumeReview || beforeReview !== reviewFingerprint(existingTask) ? (0, import_node_crypto2.randomUUID)() : previousVersion;
+          existingTask.reviewVersion = expectedReviewVersion !== void 0 && consumeReview || beforeReview !== reviewFingerprint(existingTask) ? (0, import_node_crypto3.randomUUID)() : previousVersion;
           existingTask.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
           const cols = this.taskToColumns(existingTask);
           db.prepare(`
@@ -929,10 +1007,12 @@ var init_taskRepository = __esm2({
        * Full reconstruction of DesignTaskLog from SQLite.
        */
       static getTaskById(taskId) {
-        const db = this.getDb();
-        const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-        if (!row) return null;
-        return this.rowToTask(row);
+        return measureOperation("sqlite.task.detail", () => {
+          const db = this.getDb();
+          const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+          if (!row) return null;
+          return this.rowToTask(row);
+        });
       }
       /**
        * Fast summary retrieval without parsing payload_json.
@@ -953,37 +1033,38 @@ var init_taskRepository = __esm2({
        * Keyset pagination query directly from SQLite (WHERE counter < ? ORDER BY counter DESC LIMIT 21).
        */
       static getTaskSummariesPage(options2 = {}) {
-        const db = this.getDb();
-        const limit = Math.max(1, Math.min(100, options2.limit || 20));
-        const queryLimit = limit + 1;
-        const conditions = [];
-        const params2 = [];
-        if (options2.cursor) {
-          const cursorRow = db.prepare("SELECT counter FROM tasks WHERE id = ?").get(options2.cursor);
-          if (cursorRow && typeof cursorRow.counter === "number") {
-            conditions.push("counter < ?");
-            params2.push(cursorRow.counter);
+        return measureOperation("sqlite.task.summaries", () => {
+          const db = this.getDb();
+          const limit = Math.max(1, Math.min(100, options2.limit || 20));
+          const queryLimit = limit + 1;
+          const conditions = [];
+          const params2 = [];
+          if (options2.cursor) {
+            const cursorRow = db.prepare("SELECT counter FROM tasks WHERE id = ?").get(options2.cursor);
+            if (cursorRow && typeof cursorRow.counter === "number") {
+              conditions.push("counter < ?");
+              params2.push(cursorRow.counter);
+            }
           }
-        }
-        if (options2.source && options2.source !== "ALL") {
-          conditions.push("source = ?");
-          params2.push(options2.source);
-        }
-        if (options2.status) {
-          conditions.push("status = ?");
-          params2.push(options2.status);
-        }
-        if (options2.checkpoint) {
-          conditions.push("checkpoint = ?");
-          params2.push(options2.checkpoint);
-        }
-        if (options2.search && options2.search.trim()) {
-          const q = `%${options2.search.trim()}%`;
-          conditions.push("(id LIKE ? OR quote LIKE ? OR niche1 LIKE ? OR niche2 LIKE ? OR design_id LIKE ?)");
-          params2.push(q, q, q, q, q);
-        }
-        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-        const sql = `
+          if (options2.source && options2.source !== "ALL") {
+            conditions.push("source = ?");
+            params2.push(options2.source);
+          }
+          if (options2.status) {
+            conditions.push("status = ?");
+            params2.push(options2.status);
+          }
+          if (options2.checkpoint) {
+            conditions.push("checkpoint = ?");
+            params2.push(options2.checkpoint);
+          }
+          if (options2.search && options2.search.trim()) {
+            const q = `%${options2.search.trim()}%`;
+            conditions.push("(id LIKE ? OR quote LIKE ? OR niche1 LIKE ? OR niche2 LIKE ? OR design_id LIKE ?)");
+            params2.push(q, q, q, q, q);
+          }
+          const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+          const sql = `
       SELECT id, counter, source, suffix, status, checkpoint, received_at, updated_at,
              quote, niche1, niche2, subniche, image_url, has_error, error_details,
              design_id, in_queue, events_count, client_ip
@@ -992,21 +1073,22 @@ var init_taskRepository = __esm2({
       ORDER BY counter DESC
       LIMIT ?
     `;
-        const rows = db.prepare(sql).all(...params2, queryLimit);
-        const countSql = `SELECT COUNT(*) as total FROM tasks ${whereClause}`;
-        const totalRow = db.prepare(countSql).get(...params2);
-        const totalCount = totalRow ? totalRow.total : rows.length;
-        const hasMore = rows.length > limit;
-        const pageRows = hasMore ? rows.slice(0, limit) : rows;
-        const tasks = pageRows.map((r) => this.rowToSummary(r));
-        const nextCursor = hasMore && tasks.length > 0 ? tasks[tasks.length - 1].id : null;
-        return {
-          success: true,
-          tasks,
-          totalCount,
-          hasMore,
-          nextCursor
-        };
+          const rows = db.prepare(sql).all(...params2, queryLimit);
+          const countSql = `SELECT COUNT(*) as total FROM tasks ${whereClause}`;
+          const totalRow = db.prepare(countSql).get(...params2);
+          const totalCount = totalRow ? totalRow.total : rows.length;
+          const hasMore = rows.length > limit;
+          const pageRows = hasMore ? rows.slice(0, limit) : rows;
+          const tasks = pageRows.map((r) => this.rowToSummary(r));
+          const nextCursor = hasMore && tasks.length > 0 ? tasks[tasks.length - 1].id : null;
+          return {
+            success: true,
+            tasks,
+            totalCount,
+            hasMore,
+            nextCursor
+          };
+        });
       }
       /**
        * Retrieves all awaiting tasks for review sidebar directly via index.
@@ -51140,9 +51222,9 @@ var init_settingsService = __esm2({
       vectorizerLineFitTolerance: 0.1,
       supabaseUrl: process.env.SUPABASE_URL || "",
       supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
-      productorUsptoAuth: process.env.PRODUCTOR_USPTO_AUTH || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
-      productorEuipoAuth: process.env.PRODUCTOR_EUIPO_AUTH || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ==",
-      productorDpmaAuth: process.env.PRODUCTOR_DPMA_AUTH || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm",
+      productorUsptoAuth: process.env.PRODUCTOR_USPTO_AUTH,
+      productorEuipoAuth: process.env.PRODUCTOR_EUIPO_AUTH,
+      productorDpmaAuth: process.env.PRODUCTOR_DPMA_AUTH,
       nasHost: process.env.NAS_HOST || "192.168.178.141",
       nasUser: process.env.NAS_USER || "aljan92",
       autoSlotFillHour: Number(process.env.AUTO_SLOT_FILL_HOUR) || 4,
@@ -52148,13 +52230,13 @@ var init_trademarkWhitelistService = __esm2({
 });
 
 // src/server/services/systemPromptService.ts
-var import_fs76, import_path71, import_node_crypto3, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, LEGACY_LISTING_GENERATOR_SYSTEM_PROMPT_V1, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, LEGACY_TRADEMARK_REFEREE_SYSTEM_PROMPT_V2, DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
+var import_fs76, import_path71, import_node_crypto4, DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT, DEFAULT_DESIGN_ANALYZER_SYSTEM_PROMPT, DEFAULT_UPDATE_VISION_SYSTEM_PROMPT, LEGACY_LISTING_GENERATOR_SYSTEM_PROMPT_V1, DEFAULT_LISTING_GENERATOR_SYSTEM_PROMPT, LEGACY_TRADEMARK_REFEREE_SYSTEM_PROMPT_V2, DEFAULT_TRADEMARK_REFEREE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_REWRITE_SYSTEM_PROMPT, DEFAULT_TRADEMARK_VERIFIER_SYSTEM_PROMPT, DEFAULT_UPDATE_TRANSLATION_SYSTEM_PROMPT, SystemPromptService;
 var init_systemPromptService = __esm2({
   "src/server/services/systemPromptService.ts"() {
     "use strict";
     import_fs76 = __toESM2(require("fs"), 1);
     import_path71 = __toESM2(require("path"), 1);
-    import_node_crypto3 = require("node:crypto");
+    import_node_crypto4 = require("node:crypto");
     DEFAULT_PROMPT_GENERATOR_SYSTEM_PROMPT = `You are an expert Image Prompt Engineer and Art Director specializing in original, commercially usable T-shirt graphics for print-on-demand products.
 
 Your task is to transform the supplied niches, quote, style, feeling, colors, and custom instructions into one distinctive, visually specific image-generation prompt.
@@ -53667,7 +53749,7 @@ Return ONLY valid JSON matching this schema (no markdown fences, no conversation
       static listingPromptVersion = "compact-v2";
       static trademarkPromptVersion = "us-tm-v3";
       static promptHash(prompt) {
-        return (0, import_node_crypto3.createHash)("sha256").update(prompt, "utf8").digest("hex");
+        return (0, import_node_crypto4.createHash)("sha256").update(prompt, "utf8").digest("hex");
       }
       static ensureDataDir() {
         const dir = import_path71.default.dirname(this.promptFile);
@@ -56042,11 +56124,11 @@ var init_listingSanitizationService = __esm2({
 });
 
 // src/server/services/trademarkPolicyService.ts
-var import_node_crypto4, US_TM_POLICY_VERSION, US_TM_PROOF_SCHEMA_VERSION, TrademarkPolicyService;
+var import_node_crypto5, US_TM_POLICY_VERSION, US_TM_PROOF_SCHEMA_VERSION, TrademarkPolicyService;
 var init_trademarkPolicyService = __esm2({
   "src/server/services/trademarkPolicyService.ts"() {
     "use strict";
-    import_node_crypto4 = require("node:crypto");
+    import_node_crypto5 = require("node:crypto");
     init_productCatalogService();
     init_productAvailabilityPolicy();
     init_listingSanitizationService();
@@ -56069,7 +56151,7 @@ var init_trademarkPolicyService = __esm2({
       }
       static listingFingerprint(listing) {
         const projection = ["brand", "title", "bullet1", "bullet2", "description"].map((key) => [key, ListingSanitizationService.sanitizeText(String(listing?.[key] || ""))]);
-        return (0, import_node_crypto4.createHash)("sha256").update(JSON.stringify(projection)).digest("hex");
+        return (0, import_node_crypto5.createHash)("sha256").update(JSON.stringify(projection)).digest("hex");
       }
       static resolveProductScope(additionalProductIds = []) {
         const catalog = ProductCatalogService.getCatalog();
@@ -56095,7 +56177,7 @@ var init_trademarkPolicyService = __esm2({
           productIds: products.map((product) => product.id),
           niceClasses,
           unconfiguredProductIds,
-          catalogFingerprint: (0, import_node_crypto4.createHash)("sha256").update(JSON.stringify(projection)).digest("hex")
+          catalogFingerprint: (0, import_node_crypto5.createHash)("sha256").update(JSON.stringify(projection)).digest("hex")
         };
       }
       static productsForClasses(products, classes) {
@@ -144225,7 +144307,7 @@ ${value2}`, dataLines++;
         this._protocolVersion = version22;
       }
     };
-    var import_node_crypto8 = require("node:crypto");
+    var import_node_crypto9 = require("node:crypto");
     var import_node_tls = require("node:tls");
     var import_bytes = __toESM3(require_bytes2());
     function getRawBody(req, { limit, encoding }) {
@@ -144261,7 +144343,7 @@ ${value2}`, dataLines++;
       constructor(_endpoint, res, options2) {
         this._endpoint = _endpoint;
         this.res = res;
-        this._sessionId = (0, import_node_crypto8.randomUUID)();
+        this._sessionId = (0, import_node_crypto9.randomUUID)();
         this._options = options2 || { enableDnsRebindingProtection: false };
       }
       /**
@@ -222566,13 +222648,13 @@ function inject300Dpi(pngBuffer) {
   }
   return Buffer.concat(chunks);
 }
-var import_node_fs, import_node_path, import_node_crypto5, currentDir, ArtworkResizeService;
+var import_node_fs, import_node_path, import_node_crypto6, currentDir, ArtworkResizeService;
 var init_artworkResizeService = __esm2({
   "src/server/services/artworkResizeService.ts"() {
     "use strict";
     import_node_fs = __toESM2(require("node:fs"), 1);
     import_node_path = __toESM2(require("node:path"), 1);
-    import_node_crypto5 = require("node:crypto");
+    import_node_crypto6 = require("node:crypto");
     init_artworkRenderSession();
     init_artworkRenderRuntime();
     init_artworkBrushRuntime();
@@ -222604,7 +222686,7 @@ var init_artworkResizeService = __esm2({
         return { kind: "PNG", path: pngPath };
       }
       static fingerprint(source12, customBackgroundColor) {
-        return (0, import_node_crypto5.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles(customBackgroundColor))).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
+        return (0, import_node_crypto6.createHash)("sha256").update("artwork-v6-direct-svg-png-canvas-stream-validation").update(source12.kind).update(source12.kind === "SVG" ? source12.svg : import_node_fs.default.readFileSync(source12.path)).update(JSON.stringify(artworkProfiles(customBackgroundColor))).update(import_node_fs.default.readFileSync(this.getBrushTipPath())).digest("hex");
       }
       static hasCurrentAssets(assets, fingerprint, customBackgroundColor) {
         if (!assets || assets.renderFingerprint !== fingerprint) return false;
@@ -222619,7 +222701,7 @@ var init_artworkResizeService = __esm2({
             } finally {
               import_node_fs.default.closeSync(fd);
             }
-            return header.toString("hex", 0, 8) === "89504e470d0a1a0a" && header.readUInt32BE(16) === p.width && header.readUInt32BE(20) === p.height && assets.renderFileHashes?.[p.key] === (0, import_node_crypto5.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex");
+            return header.toString("hex", 0, 8) === "89504e470d0a1a0a" && header.readUInt32BE(16) === p.width && header.readUInt32BE(20) === p.height && assets.renderFileHashes?.[p.key] === (0, import_node_crypto6.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex");
           } catch {
             return false;
           }
@@ -222630,7 +222712,7 @@ var init_artworkResizeService = __esm2({
         const fingerprint = this.fingerprint(input, customBackgroundColor);
         const files = await this.renderProfiles(taskId, input, artworkProfiles(customBackgroundColor), onProgress, fingerprint);
         const { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, ...productVariants } = files;
-        const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto5.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
+        const renderFileHashes = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, (0, import_node_crypto6.createHash)("sha256").update(import_node_fs.default.readFileSync(file)).digest("hex")]));
         return { mugStandardPath, mugBrushPath, drinkwareStandardPath, drinkwareBrushPath, productVariants, renderFingerprint: fingerprint, renderFileHashes };
       }
       static async generateProductVariant(taskId, source12, id, config, customBackgroundColor) {
@@ -222666,7 +222748,7 @@ var init_artworkResizeService = __esm2({
             onProgress?.("VARIANT", `\u{1F3A8} Render ${profile.key} (${profile.width}\xD7${profile.height})\u2026`);
             const start3 = Date.now();
             const output = import_node_path.default.join(dir, cleanId + "_" + profile.suffix + ".png");
-            const temporary = output + "." + (0, import_node_crypto5.randomUUID)() + ".tmp";
+            const temporary = output + "." + (0, import_node_crypto6.randomUUID)() + ".tmp";
             let stage = "RENDER";
             try {
               let png;
@@ -228235,10 +228317,10 @@ __export2(finalizationService_exports, {
 });
 function finalizationInput(params2) {
   const { prepareOnly, artifactRunId, ...input } = params2;
-  return (0, import_node_crypto6.createHash)("sha256").update(JSON.stringify(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)))).digest("hex");
+  return (0, import_node_crypto7.createHash)("sha256").update(JSON.stringify(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)))).digest("hex");
 }
 function finalizationTaskData(task) {
-  return (0, import_node_crypto6.createHash)("sha256").update(JSON.stringify(task && [
+  return (0, import_node_crypto7.createHash)("sha256").update(JSON.stringify(task && [
     task.id,
     task.source,
     task.designId,
@@ -228261,12 +228343,12 @@ function createFinalizationOwnership(params2, task) {
   if (task.id !== params2.taskId) throw new Error("Task-Identit\xE4t der Finalisierung stimmt nicht \xFCberein.");
   return { taskId: task.id, input: finalizationInput(params2), taskData: finalizationTaskData(task) };
 }
-var import_fs86, import_node_crypto6, FinalizationService;
+var import_fs86, import_node_crypto7, FinalizationService;
 var init_finalizationService = __esm2({
   "src/server/services/finalizationService.ts"() {
     "use strict";
     import_fs86 = __toESM2(require("fs"), 1);
-    import_node_crypto6 = require("node:crypto");
+    import_node_crypto7 = require("node:crypto");
     init_taskLogService();
     init_queueService();
     init_listingSanitizationService();
@@ -228441,7 +228523,7 @@ var init_finalizationService = __esm2({
           if (!params2.artifactRunId && ArtworkResizeService.hasCurrentAssets(task?.resizedAssets, sourceFingerprint, resolvedCustomBg)) {
             resizedAssets = task.resizedAssets;
           } else {
-            const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto6.randomUUID)() : taskId);
+            const runId = params2.artifactRunId || (task?.resizedAssets ? taskId + "_rebuild_" + (0, import_node_crypto7.randomUUID)() : taskId);
             resizedAssets = await ArtworkResizeService.generateResizedArtworks(runId, source12, (stage, title, metrics) => {
               TaskLogService.addEvent(taskId, {
                 timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -231886,12 +231968,13 @@ function normalizeCatalogProductId(raw) {
   const matched = ProductCatalogService.findProductByAmazonKey(s);
   return matched ? matched.id : s;
 }
-var import_fs89, import_path83, NON_US_DROP_ORDER, QueueService;
+var import_fs89, import_path83, import_node_perf_hooks2, NON_US_DROP_ORDER, QueueService;
 var init_queueService = __esm2({
   "src/server/services/queueService.ts"() {
     "use strict";
     import_fs89 = __toESM2(require("fs"), 1);
     import_path83 = __toESM2(require("path"), 1);
+    import_node_perf_hooks2 = require("node:perf_hooks");
     init_productCatalogService();
     init_productAvailabilityPolicy();
     init_trademarkPolicyService();
@@ -231900,6 +231983,7 @@ var init_queueService = __esm2({
     init_schedulerClock();
     init_taskRepository();
     init_atomicFileStorage();
+    init_operationalMetrics();
     NON_US_DROP_ORDER = ["JP", "ES", "IT", "FR", "DE", "GB"];
     QueueService = class {
       static queueFilePath = import_path83.default.resolve(process.cwd(), "data", "upload_queue.json");
@@ -232089,13 +232173,16 @@ var init_queueService = __esm2({
         if (this.isCorrupted()) {
           throw new Error(`[QueueService] \u{1F6A8} REFUSED: Cannot save queue while storage '${this.queueFilePath}' is in fail-safe corrupted mode.`);
         }
+        const startedAt = import_node_perf_hooks2.performance.now();
         try {
           atomicWriteJson(this.queueFilePath, this.items, {
             backup: true,
             backupExt: ".bak",
             space: 0
           });
+          recordOperation("queue.save", import_node_perf_hooks2.performance.now() - startedAt);
         } catch (err) {
+          recordOperation("queue.save", import_node_perf_hooks2.performance.now() - startedAt, 0, true);
           console.error("[QueueService] Error writing upload_queue.json:", err.message);
           throw err;
         }
@@ -235744,7 +235831,7 @@ var init_trademarkService = __esm2({
           const res = await fetch("https://uspto-tm-api2.productor.io/search-batch?classes=25,9", {
             method: "POST",
             headers: {
-              "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==",
+              "Authorization": settings.productorUsptoAuth,
               "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
               "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk"
             },
@@ -235865,7 +235952,7 @@ var init_trademarkService = __esm2({
                 method: "POST",
                 headers: {
                   ...defaultHeaders,
-                  "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
+                  "Authorization": settings.productorUsptoAuth
                 },
                 body: usptoFd,
                 signal: AbortSignal.timeout(9e3)
@@ -235909,7 +235996,7 @@ var init_trademarkService = __esm2({
                 method: "POST",
                 headers: {
                   ...defaultHeaders,
-                  "Authorization": settings.productorEuipoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ=="
+                  "Authorization": settings.productorEuipoAuth
                 },
                 body: euFd,
                 signal: AbortSignal.timeout(9e3)
@@ -235951,7 +236038,7 @@ var init_trademarkService = __esm2({
                 method: "POST",
                 headers: {
                   ...defaultHeaders,
-                  "Authorization": settings.productorDpmaAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm"
+                  "Authorization": settings.productorDpmaAuth
                 },
                 body: dpmaFd,
                 signal: AbortSignal.timeout(9e3)
@@ -236437,7 +236524,7 @@ var init_trademarkService = __esm2({
         const defaultHeaders = {
           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
           "Origin": "chrome-extension://kgicddkelkheehndihemgimanfdighkk",
-          "Authorization": settings.productorUsptoAuth || "Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=="
+          "Authorization": settings.productorUsptoAuth
         };
         for (let i = 0; i < terms.length; i += chunkSize) {
           const chunk = terms.slice(i, i + chunkSize);
@@ -237580,7 +237667,6 @@ var import_path88 = __toESM2(require("path"), 1);
 var import_fs94 = __toESM2(require("fs"), 1);
 var import_dotenv = __toESM2(require_main(), 1);
 var import_url3 = require("url");
-var import_child_process8 = require("child_process");
 init_settingsService();
 init_trademarkService();
 init_llmService();
@@ -240264,7 +240350,7 @@ var UploadScheduleService = class {
 
 // src/server/services/manualFinalizationService.ts
 var import_node_fs2 = __toESM2(require("node:fs"), 1);
-var import_node_crypto7 = require("node:crypto");
+var import_node_crypto8 = require("node:crypto");
 init_finalizationService();
 init_queueService();
 init_taskLogService();
@@ -240321,7 +240407,7 @@ var ManualFinalizationService = class {
       const result2 = await FinalizationService.finalizeForQueue({
         ...params2,
         prepareOnly: true,
-        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto7.randomUUID)()}`
+        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto8.randomUUID)()}`
       });
       if (!result2.success || !result2.resizedAssets || !result2.preparedListing) throw new Error(result2.error || "Vorbereitung fehlgeschlagen");
       const assets = result2.resizedAssets;
@@ -241105,12 +241191,16 @@ var CleanupService = class {
 };
 
 // src/server/index.ts
+init_operationalMetrics();
+init_pipelineExecutionCoordinator();
 var import_meta = {};
 import_dotenv.default.config();
 var currentDir2 = typeof __dirname !== "undefined" ? __dirname : import_path88.default.dirname((0, import_url3.fileURLToPath)(import_meta.url));
 var app = (0, import_express.default)();
 var server2 = import_http4.default.createServer(app);
 var isSystemReady = false;
+var readinessPhase = "starting";
+var readinessFailureCode = null;
 function getSystemReady() {
   return isSystemReady;
 }
@@ -241144,15 +241234,16 @@ UploadWorkerService.onStatusUpdate((status) => {
 app.use((0, import_cors.default)());
 app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ extended: true, limit: "50mb" }));
+app.use(recordHttpRequest);
 app.use((req, res, next) => {
   if (isSystemReady) return next();
-  if (req.method === "GET" || req.path === "/api/health" || !req.path.startsWith("/api/v1/")) {
+  if (!req.path.startsWith("/api/v1/") || ["/api/v1/system/update", "/api/v1/system/update/status", "/api/v1/system/metrics"].includes(req.path)) {
     return next();
   }
   return res.status(503).json({
     success: false,
-    error: "SYSTEM_RECOVERY_IN_PROGRESS",
-    message: "MBA Hub f\xFChrt gerade die Crash-Recovery und Speicher-Reconciliation durch. Bitte in K\xFCrze wiederholen."
+    error: readinessFailureCode || "SYSTEM_RECOVERY_IN_PROGRESS",
+    message: readinessFailureCode ? "MBA Hub konnte die Speicher-Recovery nicht abschlie\xDFen. Diagnose und Update bleiben verf\xFCgbar." : "MBA Hub f\xFChrt gerade die Crash-Recovery und Speicher-Reconciliation durch. Bitte in K\xFCrze wiederholen."
   });
 });
 var uploadQueue = [];
@@ -241195,15 +241286,16 @@ BrowserSessionService.onFrame((session2, base64Data, metadata) => {
 wss.on("connection", (ws4) => {
   ws4.send(JSON.stringify({
     type: "INIT",
-    payload: {
+    payload: isSystemReady ? {
       status: "online",
       slots: dailySlotStats,
       tasks: TaskLogService.getAwaitingTasks().length,
       queue: uploadQueue.length,
       browserStatus: BrowserSessionService.getStatus()
-    }
+    } : { status: "degraded", ready: false, error: readinessFailureCode }
   }));
   ws4.on("message", async (data) => {
+    if (!isSystemReady) return;
     try {
       const parsed = JSON.parse(data.toString());
       const { type: type3, session: session2, payload } = parsed;
@@ -241258,12 +241350,22 @@ wss.on("connection", (ws4) => {
 });
 app.get("/api/health", (req, res) => {
   res.json({
-    status: "ok",
+    status: isSystemReady ? "ok" : "degraded",
+    ready: isSystemReady,
+    readinessPhase,
+    readinessFailureCode,
     app: "MBA HUB",
     version: "1.0.0",
+    buildCommit: /^[0-9a-f]{40}$/i.test(process.env.APP_COMMIT_SHA || "") ? process.env.APP_COMMIT_SHA : null,
     target: "TerraMaster TOS 6.0",
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
+});
+app.get("/api/ready", (req, res) => {
+  res.status(isSystemReady ? 200 : 503).json({ ready: isSystemReady, phase: readinessPhase, error: readinessFailureCode });
+});
+app.get("/api/v1/system/metrics", (req, res) => {
+  res.json({ success: true, ...getOperationalMetrics() });
 });
 app.get("/api/v1/activity", (req, res) => {
   res.json({ success: true, activity: activityLog });
@@ -241283,6 +241385,7 @@ var cachedStats = {
   hasSupabase: false
 };
 async function refreshStatsInBackground() {
+  if (!isSystemReady) return;
   try {
     const supabaseStats = await SupabaseService.getStats();
     const ratelimiter = await SyncEngine.fetchDashboardRatelimiter().catch(() => null);
@@ -241527,51 +241630,40 @@ app.post("/api/v1/settings", (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-app.post("/api/v1/system/update", async (req, res) => {
+async function updaterRequest(endpoint, method = "GET") {
+  const token = process.env.UPDATER_TOKEN;
+  if (!token || token.length < 32) throw new Error("Updater ist nicht konfiguriert.");
+  const response2 = await fetch(`http://mba-hub-updater:3001/${endpoint}`, {
+    method,
+    headers: { "x-updater-token": token },
+    signal: AbortSignal.timeout(5e3)
+  });
+  const data = await response2.json();
+  return { status: response2.status, data };
+}
+app.get("/api/v1/system/update/status", async (_req, res) => {
   try {
-    console.log("[System Update] Starting 1-Click self-update from GitHub via native Node.js stream...");
-    const response2 = await fetch("https://github.com/aljan92/hub/archive/refs/heads/main.tar.gz");
-    if (!response2.ok) {
-      throw new Error(`GitHub Download fehlgeschlagen: HTTP ${response2.status} ${response2.statusText}`);
-    }
-    const arrayBuffer = await response2.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const tempTarPath = import_path88.default.resolve(process.cwd(), ".temp_update.tar.gz");
-    import_fs94.default.writeFileSync(tempTarPath, buffer);
-    (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
-      cwd: process.cwd(),
-      timeout: 45e3
+    const result2 = await updaterRequest("status");
+    res.status(result2.status).json(result2.data);
+  } catch (error) {
+    res.status(503).json({ error: error.message || "Updater nicht erreichbar" });
+  }
+});
+app.post("/api/v1/system/update", async (req, res) => {
+  const activeTaskId = PipelineExecutionCoordinator.getSnapshot().activeTaskId;
+  const uploadStatus = UploadWorkerService.getStatus();
+  if (activeTaskId || uploadStatus.isUploading) {
+    return res.status(409).json({
+      error: "Aktive Arbeit l\xE4uft noch. Der Neustart wird erst nach Abschluss angeboten.",
+      activeTaskId,
+      activeUpload: uploadStatus.isUploading
     });
-    try {
-      import_fs94.default.unlinkSync(tempTarPath);
-    } catch (e) {
-    }
-    const hostRepoPath = import_path88.default.resolve(process.cwd(), "host_repo");
-    if (import_fs94.default.existsSync(hostRepoPath)) {
-      try {
-        import_fs94.default.writeFileSync(tempTarPath, buffer);
-        (0, import_child_process8.execSync)(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
-          cwd: hostRepoPath,
-          timeout: 45e3
-        });
-        try {
-          import_fs94.default.unlinkSync(tempTarPath);
-        } catch (e) {
-        }
-      } catch (e) {
-      }
-    }
-    res.json({
-      success: true,
-      message: "Update erfolgreich installiert. Dashboard startet in 10 Sekunden neu..."
-    });
-    setTimeout(() => {
-      console.log("[System Update] Restarting container process now with fresh bundle...");
-      process.exit(0);
-    }, 1500);
-  } catch (err) {
-    console.error("[System Update] Failed:", err);
-    res.status(500).json({ success: false, error: err.message || "Update fehlgeschlagen" });
+  }
+  try {
+    const result2 = await updaterRequest("apply", "POST");
+    return res.status(result2.status).json(result2.data);
+  } catch (error) {
+    return res.status(503).json({ error: error.message || "Updater nicht erreichbar" });
   }
 });
 app.get("/api/v1/llm/models", async (req, res) => {
@@ -241604,6 +241696,7 @@ var lastKnownCredits = {
   ideogram: { hasKey: false }
 };
 async function refreshCreditsInBackground() {
+  if (!isSystemReady) return;
   try {
     const settings = loadSettings();
     const hasOpenRouterKey = Boolean(settings.openRouterApiKey && settings.openRouterApiKey.trim());
@@ -241882,6 +241975,7 @@ function recordHermesHeartbeat(req, metadata) {
 var cachedHealthData = null;
 var lastHealthCheckTime = 0;
 async function refreshHealthData() {
+  if (!isSystemReady) return;
   try {
     const [openrouter, ideogram, vectorizer, productor, supabase] = await Promise.all([
       LLMService.testConnection(),
@@ -243257,17 +243351,26 @@ if (import_fs94.default.existsSync(staticPath)) {
     res.sendFile(import_path88.default.join(staticPath, "index.html"));
   });
 }
-TaskRepository.init();
-QueueService.ensureLoaded();
 try {
+  readinessPhase = "task_storage";
+  TaskRepository.init();
+  readinessPhase = "queue_storage";
+  QueueService.ensureLoaded();
+  readinessPhase = "task_recovery";
   TaskRecoveryService.initAndReconcile();
+  isSystemReady = true;
+  readinessPhase = "ready";
 } catch (err) {
-  console.error("[MBA Hub] \u{1F6A8} Critical failure during TaskRecoveryService.initAndReconcile:", err);
+  readinessFailureCode = `${readinessPhase.toUpperCase()}_FAILED`;
+  console.error(`[MBA Hub] \u{1F6A8} Startup failed during ${readinessPhase}:`, err);
 }
-isSystemReady = true;
 server2.listen(Number(PORT), HOST, () => {
   console.log(`\u{1F680} MBA HUB Core Server running on http://${HOST}:${PORT}`);
   console.log(`\u{1F4E1} WebSocket stream active on ws://${HOST}:${PORT}/ws`);
+  if (!isSystemReady) {
+    console.error(`[MBA Hub] Degraded mode active (${readinessFailureCode}). Background workers remain stopped.`);
+    return;
+  }
   try {
     SyncEngine.init();
   } catch (err) {

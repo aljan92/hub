@@ -8,7 +8,6 @@ import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
 
 import { loadSettings, saveSettings, AppSettings } from './services/settingsService';
 import { TrademarkService } from './services/trademarkService';
@@ -44,6 +43,8 @@ import { DesignerService } from './services/designerService';
 import { DesignerConceptService } from './services/designerConceptService';
 import { AmazonDeleteDesignService } from './services/amazonDeleteDesignService';
 import { CleanupService } from './services/cleanupService';
+import { getOperationalMetrics, recordHttpRequest } from './services/operationalMetrics';
+import { PipelineExecutionCoordinator } from './services/pipelineExecutionCoordinator';
 
 dotenv.config();
 
@@ -54,6 +55,8 @@ const server = http.createServer(app);
 
 // Readiness Gate state (Phase P3.1): Blocks mutating requests during crash recovery
 let isSystemReady = false;
+let readinessPhase = 'starting';
+let readinessFailureCode: string | null = null;
 export function getSystemReady(): boolean {
   return isSystemReady;
 }
@@ -99,18 +102,21 @@ UploadWorkerService.onStatusUpdate((status) => {
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(recordHttpRequest);
 
 // Readiness Gate (Phase P3.1): Blocks mutating requests during crash recovery & reconciliation
 app.use((req, res, next) => {
   if (isSystemReady) return next();
-  // Allow health checks, status checks, and static assets
-  if (req.method === 'GET' || req.path === '/api/health' || !req.path.startsWith('/api/v1/')) {
+  // Keep the UI, diagnostics and updater reachable without exposing uninitialized data APIs.
+  if (!req.path.startsWith('/api/v1/') || ['/api/v1/system/update', '/api/v1/system/update/status', '/api/v1/system/metrics'].includes(req.path)) {
     return next();
   }
   return res.status(503).json({
     success: false,
-    error: 'SYSTEM_RECOVERY_IN_PROGRESS',
-    message: 'MBA Hub führt gerade die Crash-Recovery und Speicher-Reconciliation durch. Bitte in Kürze wiederholen.'
+    error: readinessFailureCode || 'SYSTEM_RECOVERY_IN_PROGRESS',
+    message: readinessFailureCode
+      ? 'MBA Hub konnte die Speicher-Recovery nicht abschließen. Diagnose und Update bleiben verfügbar.'
+      : 'MBA Hub führt gerade die Crash-Recovery und Speicher-Reconciliation durch. Bitte in Kürze wiederholen.'
   });
 });
 
@@ -170,16 +176,17 @@ BrowserSessionService.onFrame((session, base64Data, metadata) => {
 wss.on('connection', (ws) => {
   ws.send(JSON.stringify({ 
     type: 'INIT', 
-    payload: { 
+    payload: isSystemReady ? {
       status: 'online', 
       slots: dailySlotStats,
       tasks: TaskLogService.getAwaitingTasks().length,
       queue: uploadQueue.length,
       browserStatus: BrowserSessionService.getStatus()
-    } 
+    } : { status: 'degraded', ready: false, error: readinessFailureCode }
   }));
 
   ws.on('message', async (data) => {
+    if (!isSystemReady) return;
     try {
       const parsed = JSON.parse(data.toString());
       const { type, session, payload } = parsed;
@@ -244,12 +251,24 @@ wss.on('connection', (ws) => {
 // 1. Health & Activity Endpoint
 app.get('/api/health', (req, res) => {
   res.json({
-    status: 'ok',
+    status: isSystemReady ? 'ok' : 'degraded',
+    ready: isSystemReady,
+    readinessPhase,
+    readinessFailureCode,
     app: 'MBA HUB',
     version: '1.0.0',
+    buildCommit: /^[0-9a-f]{40}$/i.test(process.env.APP_COMMIT_SHA || '') ? process.env.APP_COMMIT_SHA : null,
     target: 'TerraMaster TOS 6.0',
     timestamp: new Date().toISOString()
   });
+});
+
+app.get('/api/ready', (req, res) => {
+  res.status(isSystemReady ? 200 : 503).json({ ready: isSystemReady, phase: readinessPhase, error: readinessFailureCode });
+});
+
+app.get('/api/v1/system/metrics', (req, res) => {
+  res.json({ success: true, ...getOperationalMetrics() });
 });
 
 app.get('/api/v1/activity', (req, res) => {
@@ -272,6 +291,7 @@ let cachedStats: any = {
 };
 
 async function refreshStatsInBackground() {
+  if (!isSystemReady) return;
   try {
     const supabaseStats = await SupabaseService.getStats();
     const ratelimiter = await SyncEngine.fetchDashboardRatelimiter().catch(() => null);
@@ -529,61 +549,43 @@ app.post('/api/v1/settings', (req, res) => {
   }
 });
 
-// 2.0 1-Click System Update directly from GitHub
-app.post('/api/v1/system/update', async (req, res) => {
+// The updater is a separate service so the update remains observable while this app restarts.
+async function updaterRequest(endpoint: string, method = 'GET') {
+  const token = process.env.UPDATER_TOKEN;
+  if (!token || token.length < 32) throw new Error('Updater ist nicht konfiguriert.');
+  const response = await fetch(`http://mba-hub-updater:3001/${endpoint}`, {
+    method,
+    headers: { 'x-updater-token': token },
+    signal: AbortSignal.timeout(5000)
+  });
+  const data = await response.json();
+  return { status: response.status, data };
+}
+
+app.get('/api/v1/system/update/status', async (_req, res) => {
   try {
-    console.log('[System Update] Starting 1-Click self-update from GitHub via native Node.js stream...');
+    const result = await updaterRequest('status');
+    res.status(result.status).json(result.data);
+  } catch (error: any) {
+    res.status(503).json({ error: error.message || 'Updater nicht erreichbar' });
+  }
+});
 
-    // 1. Download tarball natively using Node.js fetch (No curl required)
-    const response = await fetch('https://github.com/aljan92/hub/archive/refs/heads/main.tar.gz');
-    if (!response.ok) {
-      throw new Error(`GitHub Download fehlgeschlagen: HTTP ${response.status} ${response.statusText}`);
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    
-    // Save to temp file
-    const tempTarPath = path.resolve(process.cwd(), '.temp_update.tar.gz');
-    fs.writeFileSync(tempTarPath, buffer);
-
-    // 2. Extract using built-in tar (Safeguarding data/ directory from ever being touched)
-    execSync(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
-      cwd: process.cwd(),
-      timeout: 45000
+app.post('/api/v1/system/update', async (req, res) => {
+  const activeTaskId = PipelineExecutionCoordinator.getSnapshot().activeTaskId;
+  const uploadStatus = UploadWorkerService.getStatus();
+  if (activeTaskId || uploadStatus.isUploading) {
+    return res.status(409).json({
+      error: 'Aktive Arbeit läuft noch. Der Neustart wird erst nach Abschluss angeboten.',
+      activeTaskId,
+      activeUpload: uploadStatus.isUploading
     });
-
-    // Cleanup temp file
-    try { fs.unlinkSync(tempTarPath); } catch (e) {}
-
-    // 3. Also update host_repo if mounted
-    const hostRepoPath = path.resolve(process.cwd(), 'host_repo');
-    if (fs.existsSync(hostRepoPath)) {
-      try {
-        fs.writeFileSync(tempTarPath, buffer);
-        execSync(`tar -xzf "${tempTarPath}" --strip-components=1 --exclude="data" --exclude="data/*"`, {
-          cwd: hostRepoPath,
-          timeout: 45000
-        });
-        try { fs.unlinkSync(tempTarPath); } catch (e) {}
-      } catch (e) {
-        // ignore
-      }
-    }
-
-    res.json({
-      success: true,
-      message: 'Update erfolgreich installiert. Dashboard startet in 10 Sekunden neu...'
-    });
-
-    // Exit process cleanly so Docker (restart: unless-stopped) reloads the updated app
-    setTimeout(() => {
-      console.log('[System Update] Restarting container process now with fresh bundle...');
-      process.exit(0);
-    }, 1500);
-  } catch (err: any) {
-    console.error('[System Update] Failed:', err);
-    res.status(500).json({ success: false, error: err.message || 'Update fehlgeschlagen' });
+  }
+  try {
+    const result = await updaterRequest('apply', 'POST');
+    return res.status(result.status).json(result.data);
+  } catch (error: any) {
+    return res.status(503).json({ error: error.message || 'Updater nicht erreichbar' });
   }
 });
 
@@ -624,6 +626,7 @@ let lastKnownCredits: any = {
 };
 
 async function refreshCreditsInBackground() {
+  if (!isSystemReady) return;
   try {
     const settings = loadSettings();
     const hasOpenRouterKey = Boolean(settings.openRouterApiKey && settings.openRouterApiKey.trim());
@@ -944,6 +947,7 @@ let cachedHealthData: any = null;
 let lastHealthCheckTime = 0;
 
 async function refreshHealthData() {
+  if (!isSystemReady) return;
   try {
     const [openrouter, ideogram, vectorizer, productor, supabase] = await Promise.all([
       LLMService.testConnection(),
@@ -2618,25 +2622,32 @@ if (fs.existsSync(staticPath)) {
 
 // Phase P3.1 Startup Sequence:
 // 1. Initialize SQLite Task Storage
-TaskRepository.init();
-
-// 2. Ensure Queue is loaded into memory
-QueueService.ensureLoaded();
-
-// 3. Execute Crash Recovery & Cross-Storage Reconciliation BEFORE any mutating background service
 try {
-  TaskRecoveryService.initAndReconcile();
-} catch (err: any) {
-  console.error('[MBA Hub] 🚨 Critical failure during TaskRecoveryService.initAndReconcile:', err);
-}
+  readinessPhase = 'task_storage';
+  TaskRepository.init();
 
-// 4. Unblock mutating API calls through the Readiness Gate
-isSystemReady = true;
+  // 2. Ensure Queue is loaded into memory
+  readinessPhase = 'queue_storage';
+  QueueService.ensureLoaded();
+
+  // 3. Execute Crash Recovery & Cross-Storage Reconciliation BEFORE any mutating background service
+  readinessPhase = 'task_recovery';
+  TaskRecoveryService.initAndReconcile();
+  isSystemReady = true;
+  readinessPhase = 'ready';
+} catch (err: any) {
+  readinessFailureCode = `${readinessPhase.toUpperCase()}_FAILED`;
+  console.error(`[MBA Hub] 🚨 Startup failed during ${readinessPhase}:`, err);
+}
 
 // Start Server
 server.listen(Number(PORT), HOST, () => {
   console.log(`🚀 MBA HUB Core Server running on http://${HOST}:${PORT}`);
   console.log(`📡 WebSocket stream active on ws://${HOST}:${PORT}/ws`);
+  if (!isSystemReady) {
+    console.error(`[MBA Hub] Degraded mode active (${readinessFailureCode}). Background workers remain stopped.`);
+    return;
+  }
 
   // 5. Initialize background schedulers only AFTER recovery is complete
   try {

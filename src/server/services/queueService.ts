@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { performance } from 'node:perf_hooks';
 import { ProductCatalogService, MerchProduct } from './productCatalogService';
 import { getEnabledMarketplacesForProduct, isProductUploadEnabled, resolveEffectiveFitTypes } from './productAvailabilityPolicy';
 import { TrademarkClearanceProofV3, TrademarkPolicyService, US_TM_POLICY_VERSION } from './trademarkPolicyService';
@@ -8,6 +9,7 @@ import { loadSettings, saveSettings } from './settingsService';
 import { getSchedulerClock, UPLOAD_SCHEDULER_TIME_ZONE } from './schedulerClock';
 import { TaskRepository } from '../storage/taskRepository';
 import { atomicWriteJson, loadJsonWithBackupRecovery, isFileInFailSafe } from '../utils/atomicFileStorage';
+import { recordOperation } from './operationalMetrics';
 
 import { 
   RemoteVerificationResult, 
@@ -434,13 +436,16 @@ export class QueueService {
     if (this.isCorrupted()) {
       throw new Error(`[QueueService] 🚨 REFUSED: Cannot save queue while storage '${this.queueFilePath}' is in fail-safe corrupted mode.`);
     }
+    const startedAt = performance.now();
     try {
       atomicWriteJson(this.queueFilePath, this.items, {
         backup: true,
         backupExt: '.bak',
         space: 0
       });
+      recordOperation('queue.save', performance.now() - startedAt);
     } catch (err: any) {
+      recordOperation('queue.save', performance.now() - startedAt, 0, true);
       console.error('[QueueService] Error writing upload_queue.json:', err.message);
       throw err;
     }

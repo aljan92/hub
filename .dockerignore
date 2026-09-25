@@ -1,0 +1,20 @@
+node_modules
+**/.env*
+**/*_secret*
+**/*_token*
+**/*.pem
+**/*.key
+.git
+.github
+.codex
+.agents
+.env*
+*.md
+data
+docs
+archive
+scratch
+tests
+src
+scripts
+Erweiterungen und Programme*

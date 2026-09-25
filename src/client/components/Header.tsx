@@ -7,7 +7,6 @@ import {
   Cpu, 
   Sparkles, 
   DownloadCloud, 
-  CheckCircle2, 
   AlertTriangle,
   DollarSign,
   Tag,
@@ -85,9 +84,18 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
 
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [updateCountdown, setUpdateCountdown] = useState<number | null>(null);
+  const [updatePhase, setUpdatePhase] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [buildCommit, setBuildCommit] = useState<string | null>(null);
   const [isScreencastOpen, setIsScreencastOpen] = useState(false);
+
+  useEffect(() => {
+    if (!showUpdateModal) return;
+    fetch('/api/health')
+      .then(response => response.json())
+      .then(data => setBuildCommit(data.buildCommit || null))
+      .catch(() => setBuildCommit(null));
+  }, [showUpdateModal]);
 
   useEffect(() => {
     const interval = window.setInterval(() => setCurrentTime(new Date()), 1000);
@@ -167,25 +175,30 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
     setUpdateError(null);
     try {
       const res = await fetch('/api/v1/system/update', {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
       });
       const data = await res.json();
-      if (data.success) {
-        // Start countdown and reload
-        let count = 10;
-        setUpdateCountdown(count);
-        const timer = setInterval(() => {
-          count -= 1;
-          if (count <= 0) {
-            clearInterval(timer);
-            window.location.reload();
-          } else {
-            setUpdateCountdown(count);
-          }
-        }, 1000);
+      if (res.status === 202) {
+        setUpdatePhase('queued');
+        const timer = window.setInterval(async () => {
+          try {
+            const statusResponse = await fetch('/api/v1/system/update/status');
+            if (!statusResponse.ok) return;
+            const status = await statusResponse.json();
+            setUpdatePhase(status.phase);
+            if (['complete', 'unchanged', 'failed', 'rolled_back', 'rollback_failed'].includes(status.phase)) {
+              window.clearInterval(timer);
+              setIsUpdating(false);
+              if (status.phase === 'complete' || status.phase === 'unchanged') window.location.reload();
+              else setUpdateError(status.error || 'Update fehlgeschlagen. Der bisherige Stand wurde nach Möglichkeit wiederhergestellt.');
+            }
+          } catch { /* The app may be restarting. */ }
+        }, 2000);
       } else {
         setIsUpdating(false);
-        setUpdateError(data.error || 'Fehler beim Herunterladen des Updates.');
+        setUpdateError(data.error || 'Update konnte nicht gestartet werden.');
       }
     } catch (err: any) {
       setIsUpdating(false);
@@ -311,7 +324,7 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
           <button
             onClick={() => setShowUpdateModal(true)}
             className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 transition-all shadow-sm active:scale-95"
-            title="Neueste Version von GitHub laden & Container neu starten"
+            title="Gebautes Image laden und Container geprüft neu starten"
           >
             <DownloadCloud className="w-3.5 h-3.5 text-primary-400" />
             <span>Update</span>
@@ -337,7 +350,8 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-100">1-Click System-Update</h3>
-                <p className="text-xs text-slate-400">Direkt von GitHub (main-Branch)</p>
+                <p className="text-xs text-slate-400">Gebautes Image vom main-Branch</p>
+                <p className="text-[10px] font-mono text-slate-500">Laufender Commit: {buildCommit?.slice(0, 12) || 'unbekannt'}</p>
               </div>
             </div>
 
@@ -348,29 +362,25 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
               </div>
             )}
 
-            {updateCountdown !== null ? (
-              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center space-y-2">
-                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto animate-bounce" />
-                <div className="text-sm font-bold text-emerald-300">Update erfolgreich eingespielt!</div>
-                <div className="text-xs text-slate-300">
-                  Der Container startet jetzt neu. Das Dashboard lädt in <strong className="text-emerald-400 font-mono text-sm">{updateCountdown}s</strong> neu...
-                </div>
+            {updatePhase && isUpdating ? (
+              <div className="p-4 rounded-xl bg-primary-500/10 border border-primary-500/20 text-center text-sm text-slate-200">
+                Update läuft: <strong>{({ queued: 'Wartet auf Start', backing_up: 'Sichert bisherigen Stand', pulling: 'Lädt Image', recreating: 'Startet neuen Container', verifying: 'Prüft den Start', rolling_back: 'Stellt bisherigen Stand wieder her' } as Record<string, string>)[updatePhase] || updatePhase}</strong>. Das Dashboard lädt nach erfolgreicher Prüfung neu.
               </div>
             ) : (
               <>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Möchtest du die neuesten Änderungen direkt von GitHub herunterladen und den MBA Hub automatisch neu starten?
+                  Möchtest du die neueste gebaute Version installieren? Laufende Arbeit wird vor dem Neustart geprüft.
                 </p>
                 <div className="text-[11px] font-mono text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
-                  <div>1. Lädt GitHub Release Tarball herunter</div>
-                  <div>2. Ersetzt Standalone-Bundle &amp; Frontend</div>
-                  <div>3. Startet Docker-Container automatisch neu</div>
+                  <div>1. Sichert die laufende Version</div>
+                  <div>2. Lädt das gebaute Container-Image</div>
+                  <div>3. Prüft den Neustart und stellt bei Fehlern die alte Version wieder her</div>
                 </div>
               </>
             )}
 
             <div className="flex items-center justify-end space-x-3 pt-2">
-              {updateCountdown === null && (
+              {!isUpdating && (
                 <>
                   <button
                     onClick={() => setShowUpdateModal(false)}

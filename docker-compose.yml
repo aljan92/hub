@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # MBA HUB Core App (Including Native CDP Mac Stealth Browser Engine)
   mba-hub:
-    build: .
+    image: ghcr.io/aljan92/hub:main
     container_name: mba_hub_app
     restart: unless-stopped
     ports:
@@ -18,11 +18,26 @@ services:
       - VECTORIZER_API_SECRET=${VECTORIZER_API_SECRET:-}
       - SUPABASE_URL=${SUPABASE_URL:-}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+      - PRODUCTOR_USPTO_AUTH=${PRODUCTOR_USPTO_AUTH:-}
+      - PRODUCTOR_EUIPO_AUTH=${PRODUCTOR_EUIPO_AUTH:-}
+      - PRODUCTOR_DPMA_AUTH=${PRODUCTOR_DPMA_AUTH:-}
+      - UPDATER_TOKEN=${UPDATER_TOKEN:?UPDATER_TOKEN must be set in .env}
     volumes:
       - ./data:/app/data
       - ./data/chrome-profile:/app/data/chrome-profile
 
+  mba-hub-updater:
+    image: ghcr.io/aljan92/hub-updater:main
+    container_name: mba_hub_updater
+    restart: unless-stopped
+    environment:
+      - UPDATER_TOKEN=${UPDATER_TOKEN:?UPDATER_TOKEN must be set in .env}
+      - APP_IMAGE=ghcr.io/aljan92/hub
+      - COMPOSE_FILE=/Volume1/docker/mba-hub/docker-compose.yml
+      - APP_READY_URL=http://mba-hub:3000/api/ready
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /Volume1/docker/mba-hub:/Volume1/docker/mba-hub:ro
+
 volumes:
   hub_data:
-
-

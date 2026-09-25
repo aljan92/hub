@@ -185,7 +185,7 @@ export class TrademarkService {
       const res = await fetch('https://uspto-tm-api2.productor.io/search-batch?classes=25,9', {
         method: 'POST',
         headers: {
-          'Authorization': settings.productorUsptoAuth || 'Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng==',
+          'Authorization': settings.productorUsptoAuth,
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
           'Origin': 'chrome-extension://kgicddkelkheehndihemgimanfdighkk'
         },
@@ -360,7 +360,7 @@ export class TrademarkService {
             method: 'POST',
             headers: {
               ...defaultHeaders,
-              'Authorization': settings.productorUsptoAuth || 'Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=='
+              'Authorization': settings.productorUsptoAuth
             },
             body: usptoFd,
             signal: AbortSignal.timeout(9000)
@@ -408,7 +408,7 @@ export class TrademarkService {
             method: 'POST',
             headers: {
               ...defaultHeaders,
-              'Authorization': settings.productorEuipoAuth || 'Basic cHJvZHVjdG9yLW1lcmNoOjc4NzgyaWhvbG5zZmRiKC8mJi9pbzFubml1aDg3OGZhYnV6ZmFzYmprYmtqaGg3MDBoOQ=='
+              'Authorization': settings.productorEuipoAuth
             },
             body: euFd,
             signal: AbortSignal.timeout(9000)
@@ -454,7 +454,7 @@ export class TrademarkService {
             method: 'POST',
             headers: {
               ...defaultHeaders,
-              'Authorization': settings.productorDpmaAuth || 'Basic cHJvZHVjdG9yLW1lcmNoOjcydWppaW9zZHBoaWhxMDg3MnIzMGc4YmJpJiZ1MWlpODE3Njdnejc2NzU2JTA3Z3V6YXNm'
+              'Authorization': settings.productorDpmaAuth
             },
             body: dpmaFd,
             signal: AbortSignal.timeout(9000)
@@ -1009,7 +1009,7 @@ export class TrademarkService {
     const defaultHeaders = {
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
       'Origin': 'chrome-extension://kgicddkelkheehndihemgimanfdighkk',
-      'Authorization': settings.productorUsptoAuth || 'Basic cHJvZHVjdG9yLW1lcmNoOjg5OXU4Mjg3ejg3Ji9oaXVua2xsbmtqbml1ODc2OWcmLyZiaGJiZ2k3Ng=='
+      'Authorization': settings.productorUsptoAuth
     };
 
     for (let i = 0; i < terms.length; i += chunkSize) {
