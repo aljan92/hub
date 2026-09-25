@@ -237880,20 +237880,24 @@ init_taskLogService();
 init_taskRepository();
 
 // src/server/services/promptLogProjection.ts
-function previewContent(value2, depth = 0) {
+function previewContent(value2, depth = 0, isRequest = false) {
   if (typeof value2 === "string") return value2.length > 2e3 ? `${value2.slice(0, 160)}\u2026 [Rohdaten laden]` : value2;
   if (value2 === null || typeof value2 !== "object") return value2;
   if (depth >= 5) return "[Weitere Daten auf Anforderung]";
-  if (Array.isArray(value2)) return value2.slice(0, 40).map((item) => previewContent(item, depth + 1));
+  if (Array.isArray(value2)) return value2.slice(0, 40).map((item) => previewContent(item, depth + 1, isRequest));
   const result2 = {};
   for (const [key, child] of Object.entries(value2)) {
     if (/^(rawRequest|rawResponse|_rawResponse|raw_response|svgContent|systemPrompt|userMessage)$/i.test(key)) continue;
-    result2[key] = previewContent(child, depth + 1);
+    if (isRequest && /^(prompt|messages|requestBody)$/i.test(key)) continue;
+    result2[key] = previewContent(child, depth + 1, isRequest);
   }
   return result2;
 }
 function projectPromptLogTask(task) {
-  const events = task.events.map((event) => ({ ...event, content: previewContent(event.content) }));
+  const events = task.events.map((event) => ({
+    ...event,
+    content: event.type === "LLM_RESPONSE" && typeof event.content === "string" ? "[Antwort auf Anforderung]" : previewContent(event.content, 0, event.type.endsWith("_REQUEST"))
+  }));
   return {
     id: task.id,
     counter: task.counter,
