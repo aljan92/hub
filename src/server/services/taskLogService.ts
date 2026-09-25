@@ -947,14 +947,14 @@ export class TaskLogService {
   /**
    * Run Multimodal Vision Analysis on the generated design with OpenRouter
    */
-  static async analyzeDesignWithOpenRouter(taskId: string, localFilePath: string, imageUrl: string) {
+  static async analyzeDesignWithOpenRouter(taskId: string, localFilePath?: string, imageUrl?: string) {
     return PipelineExecutionCoordinator.runExclusive(taskId, () => {
       if (TaskExecutionControl.beforeStep(taskId, 'D4') !== 'run') return Promise.resolve();
       return this.analyzeDesignWithOpenRouterExclusive(taskId, localFilePath, imageUrl);
     }, () => TaskExecutionControl.markWaiting(taskId, 'D4'));
   }
 
-  private static async analyzeDesignWithOpenRouterExclusive(taskId: string, localFilePath: string, imageUrl: string) {
+  private static async analyzeDesignWithOpenRouterExclusive(taskId: string, localFilePath?: string, imageUrl?: string) {
     const task = this.getTaskLogById(taskId);
     if (!task) return;
 
@@ -967,7 +967,8 @@ export class TaskLogService {
         title: 'Fehler: Kein OpenRouter API Key',
         content: 'Für die Vision Design-Analyse wird ein OpenRouter API Key in den Settings benötigt.'
       });
-      this.updateTaskStatus(taskId, { status: 'COMPLETED' });
+      this.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: 'OpenRouter API Key für Vision-Analyse fehlt.' });
+      TaskExecutionControl.finishIdle(taskId);
       return;
     }
 
@@ -999,19 +1000,25 @@ export class TaskLogService {
       }
     });
 
-    // Prepare image for vision model using high-contrast Dual-Panel Vision Optimizer
-    let imageSource = imageUrl;
-    if (fs.existsSync(localFilePath)) {
-      try {
-        const { base64DataUrl } = await VisionOptimizationService.prepareVisionImage(localFilePath);
-        imageSource = base64DataUrl || imageSource;
-      } catch (e) {}
-    }
-
     const model = LLMService.normalizeModelId(settings.llmModel || 'anthropic/claude-sonnet-4');
     const start = Date.now();
 
     try {
+      // Resume/retry calls do not carry the original D3 arguments. Resolve the
+      // persisted raw artwork before constructing the multimodal request.
+      const rawImagePath = localFilePath || path.resolve(process.cwd(), 'data', 'designs', `${taskId.replace(/[^a-zA-Z0-9_-]/g, '_')}.png`);
+      let imageSource = imageUrl || task.imageUrl;
+      if (fs.existsSync(rawImagePath)) {
+        try {
+          const { base64DataUrl } = await VisionOptimizationService.prepareVisionImage(rawImagePath);
+          imageSource = base64DataUrl || imageSource;
+        } catch (error: any) {
+          if (!imageSource || !/^https?:\/\//i.test(imageSource)) throw error;
+        }
+      }
+      if (!imageSource || !/^(https?:\/\/|data:image\/)/i.test(imageSource)) {
+        throw new Error('Kein verwendbares Bild für die Vision-Analyse vorhanden.');
+      }
       const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -1153,7 +1160,8 @@ export class TaskLogService {
         content: errorMsg,
         metadata: { latencyMs, model }
       });
-      this.updateTaskStatus(taskId, { status: 'COMPLETED', hasError: false });
+      this.updateTaskStatus(taskId, { status: 'ERROR', hasError: true, errorDetails: errorMsg });
+      TaskExecutionControl.finishIdle(taskId);
     }
   }
 

@@ -165,6 +165,9 @@ export class DesignPipelineService {
     try {
       await TaskLogService.analyzeDesignWithOpenRouter(taskId);
       const updated = this.getTask(taskId);
+      if (!updated || updated.status === 'ERROR' || updated.hasError) {
+        return { success: false, error: updated?.errorDetails || 'Vision-Analyse fehlgeschlagen' };
+      }
       return { success: true, analysisResult: updated?.analysisResult };
     } catch (err: any) {
       console.error(`[DesignPipeline] ❌ Fehler in Step D4:`, err);
@@ -362,6 +365,9 @@ export class DesignPipelineService {
 
           // Post-Analysis Decision Gate: Check for defective design or manual review requirement
           const task = this.getTask(taskId);
+          if (task?.status === 'AWAITING_DESIGN_REVIEW' || task?.checkpoint === 'DESIGN_REVIEW') {
+            return { success: true, currentStep: 'D4', pausedAtCheckpoint: 'DESIGN_REVIEW' };
+          }
           const isDefective = task?.analysisResult?.design_quality?.quality_verdict === 'DEFECTIVE' || task?.analysisResult?.overall_verdict === 'REJECTED';
           if (isDefective) {
             const reason = task?.analysisResult?.design_quality?.quality_issues || 'Defective design quality detected';
@@ -402,6 +408,7 @@ export class DesignPipelineService {
 
       return { success: true, currentStep: 'D8' };
     } finally {
+      TaskExecutionControl.finishIdle(taskId);
       TaskExecutionLock.release(taskId);
     }
   }
