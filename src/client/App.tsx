@@ -78,7 +78,7 @@ export const App: React.FC = () => {
               )}
               {visitedTabs.has('promptlog') && (
                 <div className={activeTab === 'promptlog' ? 'block' : 'hidden'}>
-                  <PromptLogView />
+                  <PromptLogView isActive={activeTab === 'promptlog'} />
                 </div>
               )}
               {visitedTabs.has('systemprompts') && (

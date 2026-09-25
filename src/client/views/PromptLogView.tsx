@@ -63,6 +63,31 @@ export const getEventCategory = (event: SessionEvent): EventCategory => {
   return 'OPENROUTER';
 };
 
+const stepColor: Record<string, string> = {
+  D1: 'border-amber-500/50 text-amber-300 bg-amber-500/10',
+  D2: 'border-sky-500/50 text-sky-300 bg-sky-500/10',
+  D3: 'border-violet-500/50 text-violet-300 bg-violet-500/10',
+  D4: 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10',
+  D5: 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10',
+  D6: 'border-orange-500/50 text-orange-300 bg-orange-500/10',
+  D7: 'border-fuchsia-500/50 text-fuchsia-300 bg-fuchsia-500/10',
+  D8: 'border-teal-500/50 text-teal-300 bg-teal-500/10'
+};
+
+function getEventStep(event: SessionEvent, source: string, preflight: boolean): string | null {
+  const named = event.title.match(/\b([DU][1-8])\b/i)?.[1]?.toUpperCase();
+  if (named) return named;
+  if (source === 'UPDATE') return null;
+  if (event.type.startsWith('TM_')) return preflight ? 'D1' : 'D6';
+  if (event.type.startsWith('LLM_')) return 'D2';
+  if (event.type.startsWith('IDEOGRAM_')) return 'D3';
+  if (event.type.startsWith('ANALYSIS_')) return 'D4';
+  if (event.type.startsWith('LISTING_')) return 'D5';
+  if (event.type.startsWith('VECTORIZE_') || event.type.startsWith('SVG_') || event.type.startsWith('RESIZE_')) return 'D7';
+  if (event.type === 'TASK_HANDOFF') return 'D8';
+  return null;
+}
+
 export const getCategoryStyles = (category: EventCategory) => {
   switch (category) {
     case 'SYSTEM':
@@ -197,20 +222,48 @@ const CopyButton: React.FC<CopyBtnProps> = ({
 // Helper: Collapsible JSON Details
 // ---------------------------------------------------------------------------
 const JsonDetails: React.FC<{ title: string; data: any; defaultOpen?: boolean }> = ({ title, data, defaultOpen = false }) => {
+  const [open, setOpen] = useState(defaultOpen);
   if (!data) return null;
-  const jsonStr = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  const jsonStr = open ? (typeof data === 'string' ? data : JSON.stringify(data, null, 2)) : '';
 
   return (
-    <details className="text-[11px] text-slate-400 group" open={defaultOpen}>
+    <details className="text-[11px] text-slate-400 group" open={defaultOpen} onToggle={e => setOpen(e.currentTarget.open)}>
       <summary className="cursor-pointer font-semibold text-slate-400 hover:text-cyan-400 flex items-center justify-between py-1">
         <span>{title}</span>
-        <CopyButton text={jsonStr} label="JSON" className="opacity-0 group-hover:opacity-100" />
+        {open && <CopyButton text={jsonStr} label="JSON" className="opacity-0 group-hover:opacity-100" />}
       </summary>
-      <pre className="mt-1.5 p-2.5 bg-slate-950 rounded-lg text-slate-300 font-mono text-[11px] border border-slate-800/80 overflow-x-auto max-h-56 custom-scrollbar whitespace-pre-wrap">
-        {jsonStr}
-      </pre>
+      {open && <pre className="mt-1.5 p-2.5 bg-slate-950 rounded-lg text-slate-300 font-mono text-[11px] border border-slate-800/80 overflow-x-auto max-h-56 custom-scrollbar whitespace-pre-wrap">{jsonStr}</pre>}
     </details>
   );
+};
+
+const RawEventPanel: React.FC<{ taskId: string; index: number; version: string }> = ({ taskId, index, version }) => {
+  const [raw, setRaw] = useState<SessionEvent | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const load = async () => {
+    if (raw || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/prompt-log/events/${index}?version=${encodeURIComponent(version)}`);
+      if (res.status === 409) throw new Error('Der Task wurde geändert. Bitte die Ansicht aktualisieren und erneut öffnen.');
+      if (!res.ok) throw new Error('Rohdaten konnten nicht geladen werden.');
+      const data = await res.json();
+      setRaw(data.event);
+    } catch (err: any) {
+      setError(err.message || 'Rohdaten konnten nicht geladen werden.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  return <details className="rounded-lg border border-slate-700/60 p-2 text-xs text-slate-400" onToggle={e => { if (e.currentTarget.open) load(); }}>
+    <summary className="cursor-pointer text-cyan-300">Vollständige Ereignisdaten laden</summary>
+    {loading && <p className="mt-2">Lade Rohdaten…</p>}
+    {error && <p role="alert" className="mt-2 text-amber-300">{error}</p>}
+    {raw && <div className="mt-2 space-y-2"><CopyButton text={JSON.stringify(raw.content, null, 2)} label="Rohdaten kopieren" />
+      <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all text-[11px]">{JSON.stringify(raw.content, null, 2)}</pre></div>}
+  </details>;
 };
 
 // ---------------------------------------------------------------------------
@@ -232,6 +285,7 @@ interface EventHeaderProps {
   onRetry?: (stepType: RetryStepType) => void;
   retryStepType?: RetryStepType;
   isRetrying?: boolean;
+  step?: string | null;
 }
 
 const EventHeader: React.FC<EventHeaderProps> = ({
@@ -240,7 +294,8 @@ const EventHeader: React.FC<EventHeaderProps> = ({
   category,
   onRetry,
   retryStepType,
-  isRetrying
+  isRetrying,
+  step
 }) => {
   const timeStr = event.timestamp ? new Date(event.timestamp).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
   const styles = getCategoryStyles(category);
@@ -248,6 +303,7 @@ const EventHeader: React.FC<EventHeaderProps> = ({
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
       <div className="flex items-center space-x-2">
+        {step && <span className={`rounded border px-2 py-0.5 font-bold ${stepColor[step] || 'border-slate-600 text-slate-300 bg-slate-800'}`}>{step}</span>}
         <span className="font-mono text-[11px] font-semibold text-slate-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
           {timeStr}
         </span>
@@ -297,11 +353,13 @@ const EventHeader: React.FC<EventHeaderProps> = ({
 // ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
-export const PromptLogView: React.FC = () => {
+export const PromptLogView: React.FC<{ isActive: boolean }> = ({ isActive }) => {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedTaskDetail, setSelectedTaskDetail] = useState<DesignTaskLog | null>(null);
   const [loadingDetail, setLoadingDetail] = useState<boolean>(false);
+  const [listError, setListError] = useState('');
+  const [detailError, setDetailError] = useState('');
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
@@ -519,6 +577,11 @@ export const PromptLogView: React.FC = () => {
   const latestSummaryUpdatedAtRef = useRef<Record<string, string>>({});
   const selectedTaskIdRef = useRef<string | null>(null);
   const selectedTaskDetailRef = useRef<DesignTaskLog | null>(null);
+  const detailCacheRef = useRef<Map<string, DesignTaskLog>>(new Map());
+  const listRequestSeqRef = useRef(0);
+  const listQueryRef = useRef('');
+  const isActiveRef = useRef(isActive);
+  isActiveRef.current = isActive;
   selectedTaskIdRef.current = selectedTaskId;
   selectedTaskDetailRef.current = selectedTaskDetail;
 
@@ -543,12 +606,14 @@ export const PromptLogView: React.FC = () => {
     abortControllerRef.current = controller;
     detailRequestTaskIdRef.current = taskId;
 
-    const isInitialLoad = showInitialLoader || selectedTaskDetailRef.current?.id !== taskId;
+    const isInitialLoad = (showInitialLoader || selectedTaskDetailRef.current?.id !== taskId) && !detailCacheRef.current.has(taskId);
     if (isInitialLoad) setLoadingDetail(true);
+    setDetailError('');
     try {
-      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/prompt-log`, {
         signal: controller.signal
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.success && data.task && selectedTaskIdRef.current === taskId) {
         const latestSummaryUpdatedAt = latestSummaryUpdatedAtRef.current[taskId];
@@ -561,10 +626,14 @@ export const PromptLogView: React.FC = () => {
           detailRefreshPendingRef.current = true;
           return;
         }
+        detailCacheRef.current.delete(taskId);
+        detailCacheRef.current.set(taskId, data.task);
+        if (detailCacheRef.current.size > 8) detailCacheRef.current.delete(detailCacheRef.current.keys().next().value!);
         setSelectedTaskDetail(data.task);
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
+        setDetailError('Task-Details konnten nicht aktualisiert werden. Der letzte Stand bleibt sichtbar.');
         console.warn(`[PromptLogView] Failed to fetch task detail for ${taskId}:`, err);
       }
     } finally {
@@ -598,14 +667,17 @@ export const PromptLogView: React.FC = () => {
         detailRefreshTimerRef.current = null;
       }
       detailRefreshPendingRef.current = false;
-      if (selectedTaskDetailRef.current?.id !== selectedTaskId) {
-        setSelectedTaskDetail(null);
+      const cached = detailCacheRef.current.get(selectedTaskId);
+      if (cached) setSelectedTaskDetail(cached);
+      else if (selectedTaskDetailRef.current?.id !== selectedTaskId) setSelectedTaskDetail(null);
+      const newest = latestSummaryUpdatedAtRef.current[selectedTaskId];
+      if (isActive && (!cached || (newest && newest > (cached.updatedAt || '')))) {
+        fetchTaskDetail(selectedTaskId, !cached);
       }
-      fetchTaskDetail(selectedTaskId, true);
     } else {
       setSelectedTaskDetail(null);
     }
-  }, [selectedTaskId, fetchTaskDetail]);
+  }, [selectedTaskId, isActive, fetchTaskDetail]);
 
   useEffect(() => () => {
     if (detailRefreshTimerRef.current) clearTimeout(detailRefreshTimerRef.current);
@@ -613,47 +685,62 @@ export const PromptLogView: React.FC = () => {
   }, []);
 
   const fetchTasks = useCallback(async (source = filterSource, search = searchQuery) => {
+    const requestSeq = ++listRequestSeqRef.current;
+    const queryKey = `${source}\u0000${search.trim()}`;
     setLoading(true);
+    setListError('');
     try {
       const params = new URLSearchParams();
-      params.set('limit', '20');
+      params.set('limit', '10');
       if (source !== 'ALL') params.set('source', source);
       if (search.trim()) params.set('search', search.trim());
 
       const res = await fetch(`/api/v1/tasks/log?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      if (requestSeq !== listRequestSeqRef.current) return;
       if (data.success && Array.isArray(data.tasks)) {
-        setTasks(data.tasks);
-        setHasMore(Boolean(data.hasMore));
-        setNextCursor(data.nextCursor || null);
+        const sameQuery = listQueryRef.current === queryKey;
+        listQueryRef.current = queryKey;
+        for (const task of data.tasks as TaskSummary[]) {
+          if (task.updatedAt) latestSummaryUpdatedAtRef.current[task.id] = task.updatedAt;
+        }
+        setTasks(prev => sameQuery ? [...data.tasks, ...prev.filter(task => !data.tasks.some((fresh: TaskSummary) => fresh.id === task.id))] : data.tasks);
+        if (!sameQuery) {
+          setHasMore(Boolean(data.hasMore));
+          setNextCursor(data.nextCursor || null);
+        }
         setTotalCount(data.totalCount ?? data.tasks.length);
 
         setSelectedTaskId(prev => {
-          if (prev && data.tasks.some((t: TaskSummary) => t.id === prev)) {
+          if (prev && (sameQuery || data.tasks.some((t: TaskSummary) => t.id === prev))) {
             return prev;
           }
           return data.tasks[0]?.id || null;
         });
       }
     } catch (err) {
+      if (requestSeq === listRequestSeqRef.current) setListError('Task-Liste konnte nicht aktualisiert werden. Der letzte Stand bleibt sichtbar.');
       console.warn('[PromptLogView] Failed to fetch task summaries:', err);
     } finally {
-      setLoading(false);
+      if (requestSeq === listRequestSeqRef.current) setLoading(false);
     }
   }, [filterSource, searchQuery]);
 
   const loadMoreTasks = async () => {
     if (!hasMore || loadingMore || !nextCursor) return;
+    const queryKey = listQueryRef.current;
     setLoadingMore(true);
     try {
       const params = new URLSearchParams();
-      params.set('limit', '20');
+      params.set('limit', '10');
       params.set('cursor', nextCursor);
       if (filterSource !== 'ALL') params.set('source', filterSource);
       if (searchQuery.trim()) params.set('search', searchQuery.trim());
 
       const res = await fetch(`/api/v1/tasks/log?${params.toString()}`);
       const data = await res.json();
+      if (queryKey !== listQueryRef.current) return;
       if (data.success && Array.isArray(data.tasks)) {
         setTasks(prev => {
           const existingIds = new Set(prev.map(t => t.id));
@@ -675,6 +762,12 @@ export const PromptLogView: React.FC = () => {
       if (updatedSummary.updatedAt) {
         latestSummaryUpdatedAtRef.current[updatedSummary.id] = updatedSummary.updatedAt;
       }
+      const cached = detailCacheRef.current.get(updatedSummary.id);
+      if (cached) detailCacheRef.current.set(updatedSummary.id, {
+        ...cached, status: updatedSummary.status, checkpoint: updatedSummary.checkpoint,
+        hasError: updatedSummary.hasError, errorDetails: updatedSummary.errorDetails,
+        inQueue: updatedSummary.inQueue
+      });
       setTasks(prev => {
         const exists = prev.some(t => t.id === updatedSummary.id);
         if (exists) {
@@ -698,7 +791,7 @@ export const PromptLogView: React.FC = () => {
           inQueue: updatedSummary.inQueue,
           updatedAt: updatedSummary.updatedAt || prev.updatedAt
         } : prev);
-        scheduleTaskDetailRefresh(updatedSummary.id);
+        if (isActiveRef.current) scheduleTaskDetailRefresh(updatedSummary.id);
       }
     },
     onTaskCreated: (newSummary) => {
@@ -727,6 +820,7 @@ export const PromptLogView: React.FC = () => {
 
   // Debounced server search / filter
   useEffect(() => {
+    listRequestSeqRef.current++;
     const timer = setTimeout(() => {
       fetchTasks(filterSource, searchQuery);
     }, 300);
@@ -902,7 +996,7 @@ export const PromptLogView: React.FC = () => {
     if (skippingUpdateTaskId) return;
 
     const targetTask = tasks.find(t => t.id === taskId) || (selectedTask?.id === taskId ? selectedTask : null);
-    const designId = targetTask?.payload?.designId || targetTask?.designId;
+    const designId = (targetTask && 'payload' in targetTask ? targetTask.payload?.designId : undefined) || targetTask?.designId;
 
     const confirmMsg = designId
       ? `Design ${designId} (Task ${taskId}) dauerhaft von automatischen Updates ausschließen? (skip_update=true in Supabase)`
@@ -1062,7 +1156,7 @@ export const PromptLogView: React.FC = () => {
           </button>
 
           <button
-            onClick={fetchTasks}
+            onClick={() => fetchTasks()}
             disabled={loading}
             className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-colors"
           >
@@ -1473,9 +1567,13 @@ export const PromptLogView: React.FC = () => {
       </div>
 
       {/* Main Two-Column Layout */}
+      {listError && <p role="alert" className="text-xs text-amber-300">{listError}</p>}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Left Column: Task List (4 cols) */}
-        <div className="lg:col-span-4 glass-panel rounded-2xl p-2.5 border border-slate-800 space-y-2 overflow-y-auto max-h-[720px] custom-scrollbar">
+        <div className="lg:col-span-4 glass-panel rounded-2xl p-2.5 border border-slate-800 space-y-2 overflow-y-auto max-h-[720px] custom-scrollbar" onScroll={e => {
+          const el = e.currentTarget;
+          if (el.scrollHeight - el.scrollTop - el.clientHeight < 180) loadMoreTasks();
+        }}>
           {filteredTasks.length === 0 ? (
             <div className="text-center py-14 space-y-2">
               <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center mx-auto text-slate-500">
@@ -1579,7 +1677,7 @@ export const PromptLogView: React.FC = () => {
               className="w-full py-2.5 px-3 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-cyan-500/40 text-xs font-semibold text-cyan-400 hover:bg-slate-850 flex items-center justify-center gap-2 transition-all mt-2"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loadingMore ? 'animate-spin' : ''}`} />
-              <span>{loadingMore ? 'Lade weitere Tasks...' : 'Mehr Tasks laden (20 weitere)'}</span>
+              <span>{loadingMore ? 'Lade weitere Tasks...' : 'Mehr Tasks laden (10 weitere)'}</span>
             </button>
           )}
           {!hasMore && tasks.length > 0 && (
@@ -1591,7 +1689,8 @@ export const PromptLogView: React.FC = () => {
 
         {/* Right Column: Timeline Logbook (8 cols) */}
         <div className="lg:col-span-8 glass-panel rounded-2xl p-5 border border-slate-800 space-y-5 max-h-[720px] overflow-y-auto custom-scrollbar">
-          {loadingDetail ? (
+          {detailError && <p role="alert" className="mb-3 text-xs text-amber-300">{detailError}</p>}
+          {loadingDetail && !selectedTask ? (
             <div className="flex flex-col items-center justify-center py-28 space-y-3">
               <RefreshCw className="w-7 h-7 text-cyan-400 animate-spin" />
               <p className="text-xs font-semibold text-slate-300">Lade vollständige Task-Details...</p>
@@ -1809,6 +1908,7 @@ export const PromptLogView: React.FC = () => {
                   }
                   const isPreFlight = event.content?.isPreFlight || (event.type === 'TM_CHECK_REQUEST' && idx <= 3);
                   const category = getEventCategory(event);
+                  const step = getEventStep(event, selectedTask.source, isPreFlight);
                   const styles = getCategoryStyles(category);
                   const retryType: RetryStepType | undefined = 
                     event.type === 'LLM_REQUEST' ? 'LLM_REQUEST' :
@@ -1822,7 +1922,7 @@ export const PromptLogView: React.FC = () => {
                     event.type === 'SVG_EDIT_REQUEST' ? 'SVG_REVIEW' : undefined;
 
                   return (
-                    <div key={idx} className="relative pl-7 space-y-2">
+                    <div key={idx} className={`relative pl-7 space-y-2 border-l-2 ${step ? stepColor[step]?.split(' ')[0] || 'border-slate-700' : 'border-slate-700'}`}>
                       {/* Timeline Bullet */}
                       <div className={`absolute left-1.5 top-1.5 w-3 h-3 rounded-full border-2 -translate-x-1/2 transition-colors ${styles.dotBg} ${styles.dotBorder} ${styles.dotRing}`} />
 
@@ -1834,6 +1934,7 @@ export const PromptLogView: React.FC = () => {
                         onRetry={retryType ? (st) => handleRetryStep(selectedTask.id, st, idx) : undefined}
                         retryStepType={retryType}
                         isRetrying={retryingStep === `${selectedTask.id}-${retryType}-${idx}`}
+                        step={step}
                       />
 
                       {/* Event Body */}
@@ -2329,27 +2430,6 @@ export const PromptLogView: React.FC = () => {
                               </div>
                             )}
 
-                            {(() => {
-                              const rawContent = event.content?.rawResponse || event.content?._rawResponse || event.content?.raw_response || (event.content?.en?._rawResponse);
-                              const displayText = typeof rawContent === 'string' && rawContent.trim().length > 0 
-                                ? rawContent 
-                                : JSON.stringify(event.content, null, 2);
-                              return (
-                                <details className="text-[11px] text-slate-400 group" open={!!rawContent}>
-                                  <summary className="cursor-pointer font-semibold text-slate-400 hover:text-cyan-400 flex items-center justify-between py-1 bg-slate-900/60 px-2.5 rounded-lg border border-slate-800">
-                                    <span className="flex items-center gap-1.5 text-cyan-300">
-                                      <span>🔍 Raw LLM Antwort</span>
-                                      {rawContent ? <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">Echt</span> : null}
-                                    </span>
-                                    <CopyButton text={displayText} label="Raw Kopieren" />
-                                  </summary>
-                                  <pre className="mt-1.5 p-2.5 bg-slate-900 rounded-lg text-slate-300 font-mono text-[11px] border border-slate-800 overflow-x-auto max-h-64 custom-scrollbar whitespace-pre-wrap">
-                                    {displayText}
-                                  </pre>
-                                </details>
-                              );
-                            })()}
-
                             <JsonDetails title="Strukturiertes Listing-Objekt" data={event.content} />
                           </div>
                         );
@@ -2769,6 +2849,9 @@ export const PromptLogView: React.FC = () => {
                             <p className="font-mono text-[11px]">{String(event.content)}</p>
                           </div>
                         </div>
+                      )}
+                      {/_REQUEST$|_RESPONSE$/.test(event.type) && selectedTask.updatedAt && (
+                        <RawEventPanel key={`${selectedTask.id}-${idx}-${selectedTask.updatedAt}`} taskId={selectedTask.id} index={idx} version={selectedTask.updatedAt} />
                       )}
                     </div>
                   );

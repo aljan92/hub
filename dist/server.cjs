@@ -237878,6 +237878,66 @@ function getMcpSchema() {
 // src/server/index.ts
 init_taskLogService();
 init_taskRepository();
+
+// src/server/services/promptLogProjection.ts
+function previewContent(value2, depth = 0) {
+  if (typeof value2 === "string") return value2.length > 2e3 ? `${value2.slice(0, 160)}\u2026 [Rohdaten laden]` : value2;
+  if (value2 === null || typeof value2 !== "object") return value2;
+  if (depth >= 5) return "[Weitere Daten auf Anforderung]";
+  if (Array.isArray(value2)) return value2.slice(0, 40).map((item) => previewContent(item, depth + 1));
+  const result2 = {};
+  for (const [key, child] of Object.entries(value2)) {
+    if (/^(rawRequest|rawResponse|_rawResponse|raw_response|svgContent|systemPrompt|userMessage)$/i.test(key)) continue;
+    result2[key] = previewContent(child, depth + 1);
+  }
+  return result2;
+}
+function projectPromptLogTask(task) {
+  const events = task.events.map((event) => ({ ...event, content: previewContent(event.content) }));
+  return {
+    id: task.id,
+    counter: task.counter,
+    source: task.source,
+    suffix: task.suffix,
+    status: task.status,
+    checkpoint: task.checkpoint,
+    receivedAt: task.receivedAt,
+    updatedAt: task.updatedAt,
+    clientIp: task.clientIp,
+    designId: task.designId,
+    quote: task.quote,
+    inQueue: task.inQueue,
+    eventsCount: task.eventsCount,
+    payload: {
+      designId: task.payload?.designId,
+      title: task.payload?.title,
+      masterListing: task.payload?.masterListing,
+      brand: task.payload?.brand,
+      bullets: task.payload?.bullets,
+      liveStats: task.payload?.liveStats,
+      globalArtworkUrn: task.payload?.globalArtworkUrn,
+      productTypes: task.payload?.productTypes,
+      textData: task.payload?.textData,
+      editUrl: task.payload?.editUrl,
+      hasRejection: task.payload?.hasRejection
+    },
+    events,
+    imageUrl: task.imageUrl,
+    localImagePath: task.localImagePath,
+    localMbaPngPath: task.localMbaPngPath,
+    mbaPngUrl: task.mbaPngUrl,
+    svgUrl: task.svgUrl,
+    hasError: task.hasError,
+    errorDetails: task.errorDetails
+  };
+}
+function getPromptLogRawEvent(task, index, version5) {
+  if (task.updatedAt !== version5) return "STALE";
+  if (!Number.isSafeInteger(index) || index < 0) return null;
+  return task.events[index] || null;
+}
+
+// src/server/index.ts
 init_systemPromptService();
 init_productCatalogService();
 
@@ -242127,7 +242187,7 @@ app.post("/api/v1/designer/generate", async (req, res) => {
   try {
     const clientIp = req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "local";
     const result2 = DesignerService.createTask(req.body || {}, clientIp);
-    if (!result2.duplicate) broadcast("TASK_LOG_CREATED", result2.task);
+    if (!result2.duplicate) broadcast("TASK_LOG_CREATED", TaskLogService.toTaskSummary(result2.task));
     res.json({ success: true, taskId: result2.task.id, task: result2.task, duplicate: result2.duplicate });
   } catch (err) {
     const message = err?.message || "Task konnte nicht angelegt werden.";
@@ -242153,7 +242213,7 @@ app.post("/api/v1/designer/concepts/batch-create", async (req, res) => {
       clientIp
     });
     for (const item of results) {
-      if (!item.duplicate) broadcast("TASK_LOG_CREATED", item.task);
+      if (!item.duplicate) broadcast("TASK_LOG_CREATED", TaskLogService.toTaskSummary(item.task));
     }
     res.json({
       success: true,
@@ -242221,6 +242281,21 @@ app.use("/api/v1/tasks/:taskId", (req, res, next) => {
     return res.status(409).json({ success: false, error: "F\xFCr diese Task l\xE4uft bereits eine Review-Aktion." });
   }
   next();
+});
+app.get("/api/v1/tasks/:taskId/prompt-log", (req, res) => {
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  if (!task) return res.status(404).json({ success: false, error: "Task nicht gefunden" });
+  res.setHeader("Cache-Control", "private, no-store");
+  res.json({ success: true, task: projectPromptLogTask(task) });
+});
+app.get("/api/v1/tasks/:taskId/prompt-log/events/:eventIndex", (req, res) => {
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  if (!task) return res.status(404).json({ success: false, error: "Task nicht gefunden" });
+  const event = getPromptLogRawEvent(task, Number(req.params.eventIndex), String(req.query.version || ""));
+  if (event === "STALE") return res.status(409).json({ success: false, error: "TASK_VERSION_CHANGED" });
+  if (!event) return res.status(404).json({ success: false, error: "Event nicht gefunden" });
+  res.setHeader("Cache-Control", "private, no-store");
+  res.json({ success: true, event });
 });
 app.get("/api/v1/tasks/:taskId", (req, res) => {
   const task = TaskLogService.getTaskLogById(req.params.taskId);
@@ -242842,7 +242917,7 @@ app.post("/api/v1/hermes/task", async (req, res) => {
     payload,
     clientIp
   });
-  broadcast("TASK_LOG_CREATED", taskLog);
+  broadcast("TASK_LOG_CREATED", TaskLogService.toTaskSummary(taskLog));
   res.status(200).json({
     success: true,
     message: "Task accepted and queued.",

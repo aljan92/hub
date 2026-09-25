@@ -341,7 +341,7 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
 };
 
 export interface TaskStatusBadgeProps {
-  task: DesignTaskLog;
+  task: DesignTaskLog | TaskSummary;
   size?: 'sm' | 'md' | 'lg';
   showIcon?: boolean;
   className?: string;

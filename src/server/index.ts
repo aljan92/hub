@@ -22,6 +22,7 @@ import { subscribeBrowserStream } from './services/browserStreamSubscription';
 import { getMcpSchema } from './services/mcpSchemaService';
 import { TaskLogService } from './services/taskLogService';
 import { TaskRepository } from './storage/taskRepository';
+import { getPromptLogRawEvent, projectPromptLogTask } from './services/promptLogProjection';
 import { SystemPromptService } from './services/systemPromptService';
 import { ProductCatalogService } from './services/productCatalogService';
 import { ProductScannerService } from './services/productScannerService';
@@ -1131,7 +1132,7 @@ app.post('/api/v1/designer/generate', async (req, res) => {
   try {
     const clientIp = (req.headers['cf-connecting-ip'] as string) || (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'local';
     const result = DesignerService.createTask(req.body || {}, clientIp);
-    if (!result.duplicate) broadcast('TASK_LOG_CREATED', result.task);
+    if (!result.duplicate) broadcast('TASK_LOG_CREATED', TaskLogService.toTaskSummary(result.task));
     res.json({ success: true, taskId: result.task.id, task: result.task, duplicate: result.duplicate });
   } catch (err: any) {
     const message = err?.message || 'Task konnte nicht angelegt werden.';
@@ -1162,7 +1163,7 @@ app.post('/api/v1/designer/concepts/batch-create', async (req, res) => {
     });
 
     for (const item of results) {
-      if (!item.duplicate) broadcast('TASK_LOG_CREATED', item.task);
+      if (!item.duplicate) broadcast('TASK_LOG_CREATED', TaskLogService.toTaskSummary(item.task));
     }
 
     res.json({
@@ -1242,6 +1243,23 @@ app.use('/api/v1/tasks/:taskId', (req, res, next) => {
     return res.status(409).json({ success: false, error: 'Für diese Task läuft bereits eine Review-Aktion.' });
   }
   next();
+});
+
+app.get('/api/v1/tasks/:taskId/prompt-log', (req, res) => {
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  if (!task) return res.status(404).json({ success: false, error: 'Task nicht gefunden' });
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, task: projectPromptLogTask(task) });
+});
+
+app.get('/api/v1/tasks/:taskId/prompt-log/events/:eventIndex', (req, res) => {
+  const task = TaskLogService.getTaskLogById(req.params.taskId);
+  if (!task) return res.status(404).json({ success: false, error: 'Task nicht gefunden' });
+  const event = getPromptLogRawEvent(task, Number(req.params.eventIndex), String(req.query.version || ''));
+  if (event === 'STALE') return res.status(409).json({ success: false, error: 'TASK_VERSION_CHANGED' });
+  if (!event) return res.status(404).json({ success: false, error: 'Event nicht gefunden' });
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, event });
 });
 
 app.get('/api/v1/tasks/:taskId', (req, res) => {
@@ -1995,7 +2013,7 @@ app.post('/api/v1/hermes/task', async (req, res) => {
     clientIp
   });
 
-  broadcast('TASK_LOG_CREATED', taskLog);
+  broadcast('TASK_LOG_CREATED', TaskLogService.toTaskSummary(taskLog));
 
   res.status(200).json({
     success: true,
