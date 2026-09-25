@@ -1922,9 +1922,10 @@ export const PromptLogView: React.FC<{ isActive: boolean }> = ({ isActive }) => 
                     event.type === 'SVG_EDIT_REQUEST' ? 'SVG_REVIEW' : undefined;
 
                   return (
-                    <div key={idx} className={`relative pl-7 space-y-2 border-l-2 ${step ? stepColor[step]?.split(' ')[0] || 'border-slate-700' : 'border-slate-700'}`}>
+                    <div key={idx} className="relative pl-7">
                       {/* Timeline Bullet */}
                       <div className={`absolute left-1.5 top-1.5 w-3 h-3 rounded-full border-2 -translate-x-1/2 transition-colors ${styles.dotBg} ${styles.dotBorder} ${styles.dotRing}`} />
+                      <div className={`rounded-xl border bg-slate-950/50 p-3 space-y-3 ${step ? stepColor[step]?.split(' ')[0] || styles.cardBorder : styles.cardBorder}`}>
 
                       {/* Header */}
                       <EventHeader
@@ -2853,6 +2854,7 @@ export const PromptLogView: React.FC<{ isActive: boolean }> = ({ isActive }) => 
                       {/_REQUEST$|_RESPONSE$/.test(event.type) && selectedTask.updatedAt && (
                         <RawEventPanel key={`${selectedTask.id}-${idx}-${selectedTask.updatedAt}`} taskId={selectedTask.id} index={idx} version={selectedTask.updatedAt} />
                       )}
+                      </div>
                     </div>
                   );
                 })}
