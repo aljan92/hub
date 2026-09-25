@@ -10,7 +10,7 @@ export interface PipelineExecutionSnapshot {
 /** Process-wide FIFO gate for all resource-intensive task pipelines. */
 export class PipelineExecutionCoordinator {
   private static activeTaskId: string | null = null;
-  private static waiters: Array<{ taskId: string; resolve: () => void }> = [];
+  private static waiters: Array<{ taskId: string; resolve: (granted: boolean) => void }> = [];
   private static context = new AsyncLocalStorage<{ taskId: string; active: boolean }>();
 
   public static getSnapshot(): PipelineExecutionSnapshot {
@@ -18,6 +18,11 @@ export class PipelineExecutionCoordinator {
       activeTaskId: this.activeTaskId,
       waitingTaskIds: this.waiters.map(waiter => waiter.taskId)
     };
+  }
+
+  public static cancelWaiting(taskId: string): void {
+    const index = this.waiters.findIndex(waiter => waiter.taskId === taskId);
+    if (index >= 0) this.waiters.splice(index, 1)[0].resolve(false);
   }
 
   public static async runExclusive<T>(
@@ -31,7 +36,12 @@ export class PipelineExecutionCoordinator {
 
     if (this.activeTaskId !== null) {
       await onWaiting?.();
-      await new Promise<void>(resolve => this.waiters.push({ taskId: cleanTaskId, resolve }));
+      const granted = await new Promise<boolean>(resolve => this.waiters.push({ taskId: cleanTaskId, resolve }));
+      if (!granted) {
+        let cancelled = false;
+        try { cancelled = TaskRepository.getTaskById(cleanTaskId)?.status === 'CANCELLED'; } catch { /* test reset */ }
+        return { success: false, cancelled, paused: !cancelled, error: 'Task left the waiting queue.' } as unknown as T;
+      }
     } else {
       this.activeTaskId = cleanTaskId;
     }
@@ -40,7 +50,7 @@ export class PipelineExecutionCoordinator {
     try {
       try {
         const existingTask = TaskRepository.getTaskById(cleanTaskId);
-        if (existingTask && existingTask.status === 'CANCELLED') {
+        if (existingTask && (existingTask.status === 'CANCELLED' || existingTask.status === 'PAUSED')) {
           console.log(`[PipelineExecutionCoordinator] 🛑 Task ${cleanTaskId} wurde vor Slot-Zuteilung abgebrochen. Überspringe Ausführung.`);
           return { success: false, cancelled: true, error: 'Task was cancelled while waiting for execution slot.' } as unknown as T;
         }
@@ -54,7 +64,7 @@ export class PipelineExecutionCoordinator {
       const next = this.waiters.shift();
       if (next) {
         this.activeTaskId = next.taskId;
-        next.resolve();
+        next.resolve(true);
       } else {
         this.activeTaskId = null;
       }
@@ -64,6 +74,6 @@ export class PipelineExecutionCoordinator {
   /** Test-only reset; production code must let active work release normally. */
   public static resetForTests(): void {
     this.activeTaskId = null;
-    this.waiters.splice(0).forEach(waiter => waiter.resolve());
+    this.waiters.splice(0).forEach(waiter => waiter.resolve(false));
   }
 }

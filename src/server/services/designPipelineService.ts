@@ -12,6 +12,7 @@ import { SvgRenderService } from './svgRenderService';
 import { LLMService } from './llmService';
 import { TaskExecutionLock } from './taskExecutionLock';
 import { PipelineExecutionCoordinator } from './pipelineExecutionCoordinator';
+import { TaskExecutionControl } from './taskExecutionControl';
 
 export class DesignPipelineService {
   /**
@@ -238,7 +239,21 @@ export class DesignPipelineService {
    * Executes a single specific step
    */
   static async runStep(taskId: string, stepName: string): Promise<{ success: boolean; error?: string; result?: any }> {
-    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.runStepExclusive(taskId, stepName));
+    const aliases: Record<string, 'D1' | 'D2' | 'D3' | 'D4' | 'D5' | 'D6' | 'D7' | 'D8'> = {
+      PREFLIGHT: 'D1', PREFLIGHT_TM_REQUEST: 'D1', PROMPT: 'D2', LLM_REQUEST: 'D2',
+      IMAGE: 'D3', IDEOGRAM: 'D3', IDEOGRAM_REQUEST: 'D3', ANALYZE: 'D4', VISION: 'D4', ANALYSIS_REQUEST: 'D4',
+      LISTING: 'D5', LISTING_REQUEST: 'D5', TRADEMARK: 'D6', TM: 'D6', TM_CHECK_REQUEST: 'D6', TM_REFINE_REQUEST: 'D6',
+      VECTORIZE: 'D7', SVG: 'D7', VECTORIZE_REQUEST: 'D7', SVG_AUDIT_REQUEST: 'D7', QUEUE: 'D8', ENQUEUE: 'D8'
+    };
+    const normalized = stepName.toUpperCase().trim();
+    const order = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8'] as const;
+    const step = order.find(item => item === normalized) || aliases[normalized];
+    return PipelineExecutionCoordinator.runExclusive(taskId, async () => {
+      if (step && TaskExecutionControl.beforeStep(taskId, step) !== 'run') return { success: false, error: 'Task pausiert oder abgebrochen.' };
+      const result = await this.runStepExclusive(taskId, stepName);
+      if (step && result.success) TaskExecutionControl.afterStep(taskId, order[order.indexOf(step) + 1]);
+      return result;
+    }, () => { if (step) TaskExecutionControl.markWaiting(taskId, step); });
   }
 
   private static async runStepExclusive(taskId: string, stepName: string): Promise<{ success: boolean; error?: string; result?: any }> {
@@ -298,6 +313,7 @@ export class DesignPipelineService {
     return PipelineExecutionCoordinator.runExclusive(taskId, async () => {
       return this.runFromStepWithTaskLock(taskId, startStep, owner);
     }, () => {
+      TaskExecutionControl.markWaiting(taskId, startStep);
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'TASK_HANDOFF',
@@ -325,11 +341,8 @@ export class DesignPipelineService {
 
       for (let i = startIndex; i < stepOrder.length; i++) {
         const step = stepOrder[i];
-        const currentTask = this.getTask(taskId);
-        if (currentTask?.status === 'CANCELLED') {
-          console.log(`[DesignPipeline] 🛑 Task ${taskId} wurde abgebrochen. Breche Pipeline vor Step ${step} ab.`);
-          return { success: false, currentStep: step, error: 'Task was cancelled by user.' };
-        }
+        const gate = TaskExecutionControl.beforeStep(taskId, step);
+        if (gate !== 'run') return { success: false, currentStep: step, pausedAtCheckpoint: gate === 'paused' ? 'USER_PAUSE' : undefined, error: gate === 'paused' ? 'Task pausiert.' : 'Task was cancelled by user.' };
 
         if (step === 'D1') {
           const r1 = await this.stepD1_PreflightTrademark(taskId);
@@ -383,6 +396,8 @@ export class DesignPipelineService {
           const r8 = await this.stepD8_Enqueue(taskId);
           if (!r8.success) return { success: false, currentStep: 'D8', error: r8.error };
         }
+        const nextGate = TaskExecutionControl.afterStep(taskId, stepOrder[i + 1]);
+        if (nextGate !== 'run') return { success: false, currentStep: step, pausedAtCheckpoint: nextGate === 'paused' ? 'USER_PAUSE' : undefined, error: nextGate === 'paused' ? 'Task pausiert.' : 'Task was cancelled by user.' };
       }
 
       return { success: true, currentStep: 'D8' };

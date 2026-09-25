@@ -13,6 +13,7 @@ import { TrademarkService } from './trademarkService';
 import { loadSettings } from './settingsService';
 import { LLMService } from './llmService';
 import { AmazonRecoveryVerificationService } from './amazonRecoveryVerificationService';
+import { TaskExecutionControl } from './taskExecutionControl';
 
 export interface ReservedRecoveryJob {
   taskId: string;
@@ -90,6 +91,9 @@ export class TaskRecoveryService {
   }
 
   public static readonly CANDIDATE_ZOMBIE_STATUSES: TaskStatus[] = [
+    'WAITING',
+    'PAUSE_REQUESTED',
+    'CANCEL_REQUESTED',
     'RECEIVED',
     'PROCESSING',
     'PROMPT_READY',
@@ -98,6 +102,7 @@ export class TaskRecoveryService {
     'GENERATING_LISTING',
     'CHECKING_TRADEMARKS',
     'UPDATE_EXTRACTED',
+    'UPDATE_EXTRACTING',
     'UPDATE_DOWNLOADING_ARTWORK',
     'UPDATE_ARTWORK_READY',
     'UPDATE_ANALYZED',
@@ -401,11 +406,33 @@ export class TaskRecoveryService {
     this.reservedDesignIds.clear();
 
     // Use fast indexed query for candidate statuses only
-    const candidateTasks = TaskRepository.getTasksByStatuses(this.CANDIDATE_ZOMBIE_STATUSES);
+    const candidateTasks = TaskRepository.getTasksByStatuses(this.CANDIDATE_ZOMBIE_STATUSES)
+      .sort((a, b) => Date.parse(a.executionControl?.enqueuedAt || a.receivedAt) - Date.parse(b.executionControl?.enqueuedAt || b.receivedAt));
     report.candidateZombieTasks = candidateTasks.length;
     report.detectedZombieTasks = candidateTasks.length;
 
     for (const task of candidateTasks) {
+      if (task.status === 'CANCEL_REQUESTED') {
+        TaskExecutionControl.requestCancel(task.id, 'Vor Neustart angeforderter Abbruch abgeschlossen.');
+        continue;
+      }
+      if (task.status === 'PAUSE_REQUESTED') {
+        // The process may have stopped during an external call; the persisted
+        // current step is not proof that its side effect is safe to repeat.
+        TaskLogService.updateTaskStatus(task.id, {
+          status: 'AWAITING_RECOVERY_REVIEW', checkpoint: 'RECOVERY_REVIEW', hasError: true,
+          errorDetails: 'Pause während eines Schritts durch Neustart unterbrochen. Bitte Ergebnis vor Fortsetzung prüfen.',
+          executionControl: { ...task.executionControl!, phase: 'finished', updatedAt: new Date().toISOString() }
+        });
+        continue;
+      }
+      if (task.status === 'WAITING' && !task.executionControl?.nextStep) {
+        TaskLogService.updateTaskStatus(task.id, {
+          status: 'AWAITING_RECOVERY_REVIEW', checkpoint: 'RECOVERY_REVIEW', hasError: true,
+          errorDetails: 'Wartender Task ohne eindeutigen Fortsetzungsschritt. Manuelle Prüfung erforderlich.'
+        });
+        continue;
+      }
       // Ignore tasks that have error flag set or are in terminal/review state
       if (task.hasError || task.status === 'ERROR' || task.status === 'COMPLETED' || task.status === 'UPDATE_QUEUED' || task.status === 'REJECTED') {
         continue;
@@ -657,11 +684,23 @@ export class TaskRecoveryService {
 
     console.log(`[TaskRecovery] 🧭 Policy dispatch for ${taskId} (isUpdate: ${isUpdate}, status: ${task.status})...`);
 
+    if (task.status === 'WAITING' && task.executionControl?.nextStep && !task.inQueue && !task.checkpoint) {
+      const step = task.executionControl.nextStep;
+      if (step === 'U1' && isUpdate) return await UpdatePipelineService.resumeU1(taskId);
+      if (step.startsWith('U') === isUpdate) {
+        return isUpdate
+          ? await UpdatePipelineService.runFromStep(taskId, step as Parameters<typeof UpdatePipelineService.runFromStep>[1], 'RECOVERY')
+          : await DesignPipelineService.runFromStep(taskId, step as Parameters<typeof DesignPipelineService.runFromStep>[1], 'RECOVERY');
+      }
+    }
+
     // ==========================================
     // 1. UPDATE PIPELINE RECOVERY
     // ==========================================
     if (isUpdate) {
       switch (task.status) {
+        case 'UPDATE_EXTRACTING':
+          return await UpdatePipelineService.resumeU1(taskId);
         case 'UPDATE_EXTRACTED':
           return await UpdatePipelineService.runFromStep(taskId, 'U2', 'RECOVERY');
 

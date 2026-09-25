@@ -12,8 +12,10 @@ export function isAmazonPolicyOrRejectionNotice(text: unknown): boolean {
 }
 import { SyncEngine } from './syncEngine';
 import { TaskLogService } from './taskLogService';
+import { TaskExecutionControl } from './taskExecutionControl';
 import { ProductCatalogService } from './productCatalogService';
 import { getSupabaseClient } from './settingsService';
+import type { DesignTaskLog } from '../../types/tasks';
 
 const FIND_LISTINGS_URL = 'https://merch.amazon.com/api/ng-amazon/coral/com.amazon.merch.search.MerchSearchService/FindListings';
 const PRODUCT_CONFIG_URL = 'https://merch.amazon.com/api/productconfiguration/get?id=';
@@ -296,12 +298,28 @@ export class AmazonInspectService {
   /**
    * Create an UPDATE task in TaskLogService from fetched Amazon Merch data
    */
-  public static async createUpdateTaskFromAmazon(designId: string): Promise<any> {
+  public static async createUpdateTaskFromAmazon(designId: string, existingTaskId?: string, continuePipeline = false): Promise<any> {
     const cleanId = (designId || '').replace(/^#/, '').replace(/-U$/, '').trim();
     if (!cleanId) {
       throw new Error('Keine Design-ID (UUID) angegeben.');
     }
 
+    const taskLog = existingTaskId
+      ? TaskLogService.getTaskLogById(existingTaskId)
+      : TaskLogService.createTaskLog({ source: 'UPDATE', payload: { designId: cleanId } });
+    if (!taskLog || taskLog.payload?.designId !== cleanId) throw new Error('Update-Task passt nicht zur Design-ID.');
+    TaskLogService.updateTaskStatus(taskLog.id, { status: 'UPDATE_EXTRACTING', hasError: false, errorDetails: undefined });
+    if (TaskExecutionControl.beforeStep(taskLog.id, 'U1') !== 'run') return TaskLogService.getTaskLogById(taskLog.id);
+
+    try {
+      return await this.completeUpdateTaskFromAmazon(taskLog, cleanId, continuePipeline);
+    } catch (err: any) {
+      TaskLogService.updateTaskStatus(taskLog.id, { status: 'ERROR', hasError: true, errorDetails: err.message || String(err) });
+      throw err;
+    }
+  }
+
+  private static async completeUpdateTaskFromAmazon(taskLog: DesignTaskLog, cleanId: string, continuePipeline: boolean): Promise<DesignTaskLog> {
     // 1. Fetch Product Config (Authoritative source for design products, textData & artwork)
     const configRes = await this.inspectProductConfig(cleanId);
     if (!configRes.success || !configRes.data) {
@@ -426,14 +444,12 @@ export class AmazonInspectService {
       rawFindListings: findData
     };
 
-    // 3. Create TaskLog with source = 'UPDATE'
-    const taskLog = TaskLogService.createTaskLog({
-      source: 'UPDATE',
-      payload
-    });
+    // Keep the identity created before network calls; U1 is recoverable by design ID.
+    TaskLogService.updateTaskStatus(taskLog.id, { payload, status: 'UPDATE_EXTRACTED', hasError: false });
 
     // 4. Add structured event detailing the fetched data
     TaskLogService.addEvent(taskLog.id, {
+      timestamp: new Date().toISOString(),
       type: 'TASK_HANDOFF',
       title: `Amazon Rohdaten erfasst (${publishedCount} Varianten konfiguriert)`,
       content: {
@@ -460,6 +476,9 @@ export class AmazonInspectService {
     } catch (dErr: any) {
       console.warn(`[AmazonInspectService] ⚠️ Initiale DOM-Inspektion für ${taskLog.id} fehlgeschlagen:`, dErr.message);
     }
+
+    TaskExecutionControl.afterStep(taskLog.id, 'U2');
+    if (!continuePipeline) TaskExecutionControl.finishIdle(taskLog.id);
 
     return TaskLogService.getTask(taskLog.id) || taskLog;
   }

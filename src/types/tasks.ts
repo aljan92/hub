@@ -29,6 +29,10 @@ export interface PromptPoolSnapshot {
 
 export type TaskStatus = 
   | 'RECEIVED'
+  | 'WAITING'
+  | 'PAUSE_REQUESTED'
+  | 'PAUSED'
+  | 'CANCEL_REQUESTED'
   | 'PROCESSING'
   | 'PROMPT_READY'
   | 'GENERATING_IMAGE'
@@ -45,6 +49,7 @@ export type TaskStatus =
   | 'AWAITING_SVG_REVIEW'
   | 'AWAITING_RECOVERY_REVIEW'
   | 'UPDATE_EXTRACTED'
+  | 'UPDATE_EXTRACTING'
   | 'UPDATE_DOWNLOADING_ARTWORK'
   | 'UPDATE_ARTWORK_READY'
   | 'UPDATE_ANALYZED'
@@ -151,6 +156,15 @@ export interface DesignTaskLog {
   source: TaskSource;
   suffix: TaskSuffix;
   status: TaskStatus;
+  /** Durable control state; the ordinary status remains a lightweight list projection. */
+  executionControl?: {
+    phase: 'queued' | 'running' | 'pause_requested' | 'paused' | 'cancel_requested' | 'finished';
+    nextStep?: 'D1' | 'D2' | 'D3' | 'D4' | 'D5' | 'D6' | 'D7' | 'D8' | 'U1' | 'U2' | 'U3' | 'U4' | 'U5' | 'U6' | 'U7';
+    previousStatus?: TaskStatus;
+    enqueuedAt?: string;
+    attempt: number;
+    updatedAt: string;
+  };
   checkpoint?: CheckpointType;
   receivedAt: string;
   updatedAt?: string;

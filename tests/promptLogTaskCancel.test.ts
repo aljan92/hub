@@ -59,11 +59,7 @@ async function runTests() {
     const cancelU = TaskLogService.cancelTask('#802-U', 'Vom Benutzer im Prompt Log abgebrochen.');
     assert.strictEqual(cancelU.success, true);
 
-    // Simulate endpoint behavior for UPDATE tasks
-    UpdateBackfillService.addRecentlyCancelledDesign('DESIGN-802');
-    UpdateBackfillService.releaseInFlight('DESIGN-802');
-
-    // Auto backfill stays enabled
+    // Cancel completion owns the backfill cooldown; no endpoint-side duplicate action.
     assert.strictEqual(loadSettings().queueUpdateAutoBackfillEnabled, true);
     // Design is excluded from immediate next candidate fetch
     assert.ok(UpdateBackfillService.getExcludedDesignIds().has('DESIGN-802'));

@@ -18,7 +18,8 @@ import {
   XCircle,
   Sliders,
   Ban,
-  FastForward
+  FastForward,
+  PauseCircle
 } from 'lucide-react';
 import { DesignTaskLog, TaskSummary, EventCategory } from '../../types/tasks';
 
@@ -34,6 +35,11 @@ export interface TaskStatusInfo {
 export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatusInfo => {
   const isUpdate = task.source === 'UPDATE' || task.suffix === 'U' || task.id.endsWith('-U');
   const hasRejection = Boolean((task as any).payload?.hasRejection);
+
+  if (['WAITING', 'PAUSE_REQUESTED', 'PAUSED', 'CANCEL_REQUESTED'].includes(task.status)) {
+    const label = task.status === 'WAITING' ? 'Wartend' : task.status === 'PAUSE_REQUESTED' ? 'Pause angefordert' : task.status === 'PAUSED' ? 'Pausiert' : 'Abbruch angefordert';
+    return { label, badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/30', dotBg: 'bg-amber-400', category: 'SYSTEM', icon: <PauseCircle className="w-3 h-3" />, isAnimated: false };
+  }
 
   // 1. Error state
   if (task.hasError || task.status === 'ERROR') {
@@ -104,6 +110,11 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
   // 5. Active Pipeline Processing Steps (PRIORITIZED over checkpoints!)
   // Guarantees active steps (e.g. CHECKING_TRADEMARKS) never get shadowed as waiting.
   const rejPrefix = hasRejection ? '⚠️ ' : '';
+
+  if (task.status === 'UPDATE_EXTRACTING') return {
+    label: '[U1/7] Amazon-Daten laden…', badgeClass: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
+    dotBg: 'bg-teal-400', category: 'SYSTEM', icon: <RefreshCw className="w-3 h-3 animate-spin" />, isAnimated: true
+  };
 
   if (task.status === 'UPDATE_DOWNLOADING_ARTWORK') {
     return {

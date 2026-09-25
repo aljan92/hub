@@ -23,6 +23,7 @@ import {
 import { TaskRepository } from '../storage/taskRepository';
 import { TaskExecutionLock } from './taskExecutionLock';
 import { PipelineExecutionCoordinator } from './pipelineExecutionCoordinator';
+import { TaskExecutionControl } from './taskExecutionControl';
 import { PromptPoolService } from './promptPoolService';
 import type { FinalizationParams } from './finalizationService';
 
@@ -360,6 +361,20 @@ export class TaskLogService {
       return current;
     }
 
+    if (current && !updates.executionControl && updates.status &&
+        (current.executionControl?.phase === 'pause_requested' || current.executionControl?.phase === 'cancel_requested')) {
+      if (updates.status.startsWith('AWAITING_') || ['ERROR', 'REJECTED', 'COMPLETED', 'UPDATE_QUEUED'].includes(updates.status)) {
+        updates = { ...updates, executionControl: { ...current.executionControl, phase: 'finished', updatedAt: new Date().toISOString() } };
+      } else {
+        updates = { ...updates, status: current.status };
+      }
+    }
+    if (current?.executionControl && !updates.executionControl && updates.status &&
+        ['running', 'queued'].includes(current.executionControl.phase) &&
+        (updates.status.startsWith('AWAITING_') || ['ERROR', 'REJECTED', 'COMPLETED', 'UPDATE_QUEUED'].includes(updates.status))) {
+      updates = { ...updates, executionControl: { ...current.executionControl, phase: 'finished', updatedAt: new Date().toISOString() } };
+    }
+
     // Only auto-trigger enqueue when the status is explicitly transitioning to COMPLETED
     if (updates.status === 'COMPLETED' && updates.inQueue !== true) {
       if (current && current.source !== 'UPDATE' && !current.inQueue) {
@@ -383,7 +398,11 @@ export class TaskLogService {
    * Run the LLM Session via OpenRouter
    */
   static async processTaskWithOpenRouter(taskId: string, options?: { skipPreFlight?: boolean }) {
-    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.processTaskWithOpenRouterExclusive(taskId, options), () => {
+    return PipelineExecutionCoordinator.runExclusive(taskId, async () => {
+      if (TaskExecutionControl.beforeStep(taskId, 'D1') !== 'run') return;
+      return this.processTaskWithOpenRouterExclusive(taskId, options);
+    }, () => {
+      TaskExecutionControl.markWaiting(taskId, 'D1');
       this.addEvent(taskId, {
         timestamp: new Date().toISOString(), type: 'TASK_HANDOFF',
         title: '⏳ Wartet auf freien Verarbeitungsslot',
@@ -527,6 +546,7 @@ export class TaskLogService {
       }
     }
 
+    if (TaskExecutionControl.afterStep(taskId, 'D2') !== 'run' || TaskExecutionControl.beforeStep(taskId, 'D2') !== 'run') return;
     // 1. Log Event: Session Start
     this.addEvent(taskId, {
       timestamp: new Date().toISOString(),
@@ -686,6 +706,7 @@ export class TaskLogService {
       console.log(`[TaskLogService] ⚡ Task ${taskId} erfolgreich generiert in ${latencyMs}ms (${usage?.total || 0} Tokens)`);
 
       // 5. Automatically trigger the image provider stored on this task
+      if (TaskExecutionControl.afterStep(taskId, 'D3') !== 'run') return;
       await this.processTaskWithImageGenerator(taskId, extractedPrompt);
     } catch (err: any) {
       const latencyMs = Date.now() - start;
@@ -702,7 +723,10 @@ export class TaskLogService {
   }
 
   static async processTaskWithImageGenerator(taskId: string, promptText?: string) {
-    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.processTaskWithImageGeneratorExclusive(taskId, promptText));
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => {
+      if (TaskExecutionControl.beforeStep(taskId, 'D3') !== 'run') return Promise.resolve();
+      return this.processTaskWithImageGeneratorExclusive(taskId, promptText);
+    }, () => TaskExecutionControl.markWaiting(taskId, 'D3'));
   }
 
   private static refreshPromptPoolSettings(task: DesignTaskLog): PromptPoolSnapshot {
@@ -901,6 +925,7 @@ export class TaskLogService {
 
       console.log(`[TaskLogService] 🖼️ ${providerLabel} Bild für Task ${taskId} erfolgreich generiert in ${latencyMs}ms`);
 
+      if (TaskExecutionControl.afterStep(taskId, 'D4') !== 'run') return;
       await this.analyzeDesignWithOpenRouter(taskId, localFilePath, sourceUrl);
     } catch (err: any) {
       const latencyMs = Date.now() - start;
@@ -923,7 +948,10 @@ export class TaskLogService {
    * Run Multimodal Vision Analysis on the generated design with OpenRouter
    */
   static async analyzeDesignWithOpenRouter(taskId: string, localFilePath: string, imageUrl: string) {
-    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.analyzeDesignWithOpenRouterExclusive(taskId, localFilePath, imageUrl));
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => {
+      if (TaskExecutionControl.beforeStep(taskId, 'D4') !== 'run') return Promise.resolve();
+      return this.analyzeDesignWithOpenRouterExclusive(taskId, localFilePath, imageUrl);
+    }, () => TaskExecutionControl.markWaiting(taskId, 'D4'));
   }
 
   private static async analyzeDesignWithOpenRouterExclusive(taskId: string, localFilePath: string, imageUrl: string) {
@@ -1079,6 +1107,7 @@ export class TaskLogService {
           analysisResult: parsedAnalysis,
           hasError: false
         });
+        if (TaskExecutionControl.afterStep(taskId, 'D5') !== 'run') return;
         await this.generateListingWithOpenRouter(taskId);
       } else {
         // Human-in-the-Loop: Hand off to Tasks View for manual inspection / confirmation
@@ -1132,7 +1161,10 @@ export class TaskLogService {
    * Automatically generate Master English MBA SEO Listing and proceed to Trademark Loop
    */
   static async generateListingWithOpenRouter(taskId: string) {
-    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.generateListingWithOpenRouterExclusive(taskId));
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => {
+      if (TaskExecutionControl.beforeStep(taskId, 'D5') !== 'run') return Promise.resolve();
+      return this.generateListingWithOpenRouterExclusive(taskId);
+    }, () => TaskExecutionControl.markWaiting(taskId, 'D5'));
   }
 
   private static async generateListingWithOpenRouterExclusive(taskId: string) {
@@ -1331,6 +1363,7 @@ export class TaskLogService {
       console.log(`[TaskLogService] 📝 Master English Listing für Task ${taskId} erfolgreich generiert in ${latencyMs}ms. Starte Trademark Audit...`);
 
       // Trigger automatic Trademark Check & Refinement loop!
+      if (TaskExecutionControl.afterStep(taskId, 'D6') !== 'run') return;
       await this.auditListingTrademarks(taskId);
     } catch (err: any) {
       const latencyMs = Date.now() - start;
@@ -1352,6 +1385,13 @@ export class TaskLogService {
    * product blocking, and post-approval localization into DE, FR, ES, IT, JA.
    */
   static async auditListingTrademarks(taskId: string) {
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => {
+      if (TaskExecutionControl.beforeStep(taskId, 'D6') !== 'run') return Promise.resolve();
+      return this.auditListingTrademarksExclusive(taskId);
+    }, () => TaskExecutionControl.markWaiting(taskId, 'D6'));
+  }
+
+  private static async auditListingTrademarksExclusive(taskId: string) {
     const task = this.getTaskLogById(taskId);
     if (!task || !task.listingResult) return;
 
@@ -1550,7 +1590,7 @@ export class TaskLogService {
         console.log(`[TaskLogService] ✨ Update-Task ${taskId} Listing freigegeben -> Direkte Übergabe an Queue ✓`);
         try {
           const { UpdatePipelineService } = require('./updatePipelineService');
-          UpdatePipelineService.stepU7_Enqueue(taskId).catch((err: any) => {
+          UpdatePipelineService.runStep(taskId, 'U7').catch((err: any) => {
             console.error(`[TaskLogService] Fehler bei Step U7 Enqueue für ${taskId}:`, err);
           });
         } catch (err) {
@@ -1560,6 +1600,7 @@ export class TaskLogService {
       }
 
       console.log(`[TaskLogService] ✨ Task ${taskId} Listing freigegeben und lokalisiert -> Starte Vektorisierung ✓`);
+      if (TaskExecutionControl.afterStep(taskId, 'D7') !== 'run') return;
       this.vectorizeDesignTask(taskId).catch(err => {
         console.error(`[TaskLogService] Vektorisierung für Task ${taskId} fehlgeschlagen:`, err);
       });
@@ -1575,7 +1616,10 @@ export class TaskLogService {
   }
 
   static async vectorizeDesignTask(taskId: string): Promise<void> {
-    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.vectorizeDesignTaskExclusive(taskId));
+    return PipelineExecutionCoordinator.runExclusive(taskId, () => {
+      if (TaskExecutionControl.beforeStep(taskId, 'D7') !== 'run') return Promise.resolve();
+      return this.vectorizeDesignTaskExclusive(taskId);
+    }, () => TaskExecutionControl.markWaiting(taskId, 'D7'));
   }
 
   private static async vectorizeDesignTaskExclusive(taskId: string): Promise<void> {
@@ -1587,7 +1631,7 @@ export class TaskLogService {
       console.log(`[TaskLogService] ℹ️ Task ${taskId} ist ein Update-Task -> Vektorisierung wird übersprungen (Master-Artwork bereits fertig).`);
       try {
         const { UpdatePipelineService } = require('./updatePipelineService');
-        await UpdatePipelineService.stepU7_Enqueue(taskId);
+        await UpdatePipelineService.runStep(taskId, 'U7');
       } catch (e) {
         console.error(`[TaskLogService] Fehler beim Enqueue von Update-Task ${taskId}:`, e);
       }
@@ -1794,6 +1838,7 @@ export class TaskLogService {
           // completeTaskAndEnqueue() → FinalizationService.finalizeForQueue() erzeugt alle Varianten.
 
           this.persistArtworkState(task);
+          if (TaskExecutionControl.afterStep(taskId, 'D8') !== 'run') return;
           const finalized = await this.completeTaskAndEnqueue(taskId);
           if (!finalized.success) return;
 
@@ -1880,29 +1925,35 @@ export class TaskLogService {
    * Jump back to an earlier pipeline step and re-execute from there
    */
   static async retryFromStep(taskId: string, stepType: RetryStepType, eventIndex?: number): Promise<{ success: boolean; message: string }> {
-    if (TaskExecutionLock.isLocked(taskId)) throw new Error('Task wird gerade verarbeitet; Wiederholung gesperrt.');
-    const logs = this.loadLogs();
-    const currentTask = logs.find(t => t.id === taskId);
+    const slot = PipelineExecutionCoordinator.getSnapshot();
+    if (TaskExecutionLock.isLocked(taskId) || slot.activeTaskId === taskId || slot.waitingTaskIds.includes(taskId)) throw new Error('Task wird gerade verarbeitet; Wiederholung gesperrt.');
+    const currentTask = TaskRepository.getTaskById(taskId);
     if (!currentTask) {
       throw new Error(`Task ${taskId} nicht gefunden.`);
     }
-
-    // Wenn ein konkreter eventIndex übergeben wurde, Historie exakt ab diesem Schritt abschneiden!
-    if (typeof eventIndex === 'number' && eventIndex >= 0 && eventIndex < currentTask.events.length) {
-      currentTask.events = currentTask.events.slice(0, eventIndex);
-    }
+    if (currentTask.inQueue || ['CANCELLED', 'COMPLETED', 'UPDATE_QUEUED'].includes(currentTask.status) || (currentTask.executionControl && currentTask.executionControl.phase !== 'finished')) throw new Error('Task ist abgeschlossen, abgebrochen oder bereits in Ausführung; Wiederholung gesperrt.');
+    if (['RESIZE_REQUEST', 'UPDATE_U6_5_RESIZE'].includes(stepType)) throw new Error('Resize bitte über den gesicherten Finalisierungs-Retry ausführen.');
+    if (stepType === 'TRANSLATION_REQUEST') throw new Error('Übersetzung benötigt eine fachliche Freigabe; bitte den Task prüfen.');
+    if (!['PREFLIGHT_TM_REQUEST', 'LLM_REQUEST', 'IDEOGRAM_REQUEST', 'ANALYSIS_REQUEST', 'LISTING_REQUEST', 'TM_CHECK_REQUEST', 'TM_REFINE_REQUEST', 'VECTORIZE_REQUEST', 'SVG_AUDIT_REQUEST', 'SVG_REVIEW'].includes(stepType) && !stepType.startsWith('UPDATE_')) throw new Error(`Unbekannter Step-Typ: ${stepType}`);
+    const retrySteps: Partial<Record<RetryStepType, NonNullable<NonNullable<DesignTaskLog['executionControl']>['nextStep']>>> = {
+      PREFLIGHT_TM_REQUEST: 'D1', LLM_REQUEST: 'D2', IDEOGRAM_REQUEST: 'D3', ANALYSIS_REQUEST: 'D4',
+      LISTING_REQUEST: 'D5', TM_CHECK_REQUEST: currentTask.source === 'UPDATE' ? 'U5' : 'D6',
+      TM_REFINE_REQUEST: currentTask.source === 'UPDATE' ? 'U5' : 'D6', VECTORIZE_REQUEST: 'D7',
+      UPDATE_U1_EXTRACT: 'U1', UPDATE_U2_ARTWORK: 'U2', UPDATE_U3_ANALYZE: 'U3', UPDATE_U4_REWRITE: 'U4',
+      UPDATE_U5_TM_CHECK: 'U5', UPDATE_U6_TRANSLATE: 'U6', UPDATE_U7_ENQUEUE: 'U7'
+    };
+    currentTask.executionControl = { phase: 'queued', nextStep: retrySteps[stepType], attempt: (currentTask.executionControl?.attempt || 0) + 1, enqueuedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    currentTask.events.push({ timestamp: new Date().toISOString(), type: 'TASK_HANDOFF', title: 'Schritt erneut gestartet', content: { action: 'RETRY', stepType, eventIndex } });
+    TaskRepository.updateTask(taskId, currentTask);
 
     if (stepType === 'LLM_REQUEST') {
-      if (typeof eventIndex !== 'number') {
-        const keepIdx = currentTask.events.findIndex(e => e.type === 'LLM_REQUEST');
-        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
-      }
+
       currentTask.status = 'PROCESSING';
       currentTask.resultPrompt = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
       this.refreshPromptPoolSettings(currentTask);
-      this.saveLogs(logs);
+      TaskRepository.updateTask(taskId, currentTask);
 
       this.generatePromptWithOpenRouter(taskId).catch(err => {
         console.error(`[TaskLogService] Retry Prompt failed for task ${taskId}:`, err);
@@ -1911,10 +1962,7 @@ export class TaskLogService {
     }
 
     if (stepType === 'IDEOGRAM_REQUEST') {
-      if (typeof eventIndex !== 'number') {
-        const keepIdx = currentTask.events.findIndex(e => e.type === 'IDEOGRAM_REQUEST');
-        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
-      }
+
       currentTask.status = 'GENERATING_IMAGE';
       currentTask.imageUrl = undefined;
       currentTask.localImagePath = undefined;
@@ -1925,7 +1973,7 @@ export class TaskLogService {
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
       const refreshedSettings = this.refreshImageGenerationSettings(currentTask);
-      this.saveLogs(logs);
+      TaskRepository.updateTask(taskId, currentTask);
 
       this.processTaskWithImageGenerator(taskId).catch(err => {
         console.error(`[TaskLogService] Retry image generation failed for task ${taskId}:`, err);
@@ -1934,15 +1982,12 @@ export class TaskLogService {
     }
 
     if (stepType === 'ANALYSIS_REQUEST') {
-      if (typeof eventIndex !== 'number') {
-        const keepIdx = currentTask.events.findIndex(e => e.type === 'ANALYSIS_REQUEST');
-        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
-      }
+
       currentTask.status = 'ANALYZING_DESIGN';
       currentTask.analysisResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
-      this.saveLogs(logs);
+      TaskRepository.updateTask(taskId, currentTask);
 
       this.analyzeDesignWithOpenRouter(taskId).catch(err => {
         console.error(`[TaskLogService] Retry Analysis failed for task ${taskId}:`, err);
@@ -1951,17 +1996,14 @@ export class TaskLogService {
     }
 
     if (stepType === 'LISTING_REQUEST') {
-      if (typeof eventIndex !== 'number') {
-        const keepIdx = currentTask.events.findIndex(e => e.type === 'LISTING_REQUEST');
-        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
-      }
+
       currentTask.status = 'GENERATING_LISTING';
       currentTask.listingResult = undefined;
       currentTask.trademarkCheckResult = undefined;
       currentTask.trademarkRefineResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
-      this.saveLogs(logs);
+      TaskRepository.updateTask(taskId, currentTask);
 
       this.generateListingWithOpenRouter(taskId).catch(err => {
         console.error(`[TaskLogService] Retry Listing failed for task ${taskId}:`, err);
@@ -1970,15 +2012,12 @@ export class TaskLogService {
     }
 
     if (stepType === 'PREFLIGHT_TM_REQUEST') {
-      if (typeof eventIndex !== 'number') {
-        const keepIdx = currentTask.events.findIndex(e => e.type === 'TM_CHECK_REQUEST');
-        if (keepIdx !== -1) currentTask.events = currentTask.events.slice(0, keepIdx);
-      }
+
       currentTask.status = 'PROCESSING';
       currentTask.trademarkCheckResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
-      this.saveLogs(logs);
+      TaskRepository.updateTask(taskId, currentTask);
 
       this.processTaskWithOpenRouter(taskId).catch(err => {
         console.error(`[TaskLogService] Retry Pre-Flight TM Check failed for task ${taskId}:`, err);
@@ -1987,29 +2026,18 @@ export class TaskLogService {
     }
 
     if (stepType === 'TM_CHECK_REQUEST' || stepType === 'TM_REFINE_REQUEST') {
-      if (typeof eventIndex !== 'number') {
-        let lastTmIdx = -1;
-        for (let i = currentTask.events.length - 1; i >= 0; i--) {
-          if (currentTask.events[i].type === 'TM_CHECK_REQUEST' || currentTask.events[i].type === 'TM_REFINE_REQUEST') {
-            lastTmIdx = i;
-            break;
-          }
-        }
-        if (lastTmIdx !== -1) {
-          currentTask.events = currentTask.events.slice(0, lastTmIdx);
-        }
-      }
+
       currentTask.status = 'CHECKING_TRADEMARKS';
       currentTask.trademarkCheckResult = undefined;
       currentTask.trademarkRefineResult = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
-      this.saveLogs(logs);
+      TaskRepository.updateTask(taskId, currentTask);
 
       if (currentTask.source === 'UPDATE' || currentTask.suffix === 'U') {
         try {
           const { UpdatePipelineService } = require('./updatePipelineService');
-          UpdatePipelineService.stepU5_TrademarkCheck(taskId).catch((err: any) => {
+          UpdatePipelineService.runStep(taskId, 'U5').catch((err: any) => {
             console.error(`[TaskLogService] Retry Update Step U5 failed:`, err);
           });
           return { success: true, message: 'Update Step U5 (Trademark Check) neu gestartet.' };
@@ -2025,19 +2053,14 @@ export class TaskLogService {
     }
 
     if (stepType === 'VECTORIZE_REQUEST') {
-      if (typeof eventIndex !== 'number') {
-        const lastVecIdx = currentTask.events.findIndex(e => e.type === 'VECTORIZE_REQUEST');
-        if (lastVecIdx !== -1) {
-          currentTask.events = currentTask.events.slice(0, lastVecIdx);
-        }
-      }
+
       currentTask.status = 'VECTORIZING_DESIGN';
       currentTask.svgUrl = undefined;
       currentTask.localSvgPath = undefined;
       currentTask.svgContent = undefined;
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
-      this.saveLogs(logs);
+      TaskRepository.updateTask(taskId, currentTask);
 
       this.vectorizeDesignTask(taskId).catch(err => {
         console.error(`[TaskLogService] Retry Vectorization failed for task ${taskId}:`, err);
@@ -2046,17 +2069,12 @@ export class TaskLogService {
     }
 
     if (stepType === 'SVG_AUDIT_REQUEST' || stepType === 'SVG_REVIEW') {
-      if (typeof eventIndex !== 'number') {
-        const lastAuditIdx = currentTask.events.findIndex(e => e.type === 'SVG_AUDIT_REQUEST' || e.type === 'SVG_EDIT_REQUEST');
-        if (lastAuditIdx !== -1) {
-          currentTask.events = currentTask.events.slice(0, lastAuditIdx);
-        }
-      }
+
       currentTask.status = 'AWAITING_SVG_REVIEW';
       currentTask.checkpoint = 'SVG_REVIEW';
       currentTask.hasError = false;
       currentTask.errorDetails = undefined;
-      this.saveLogs(logs);
+      TaskRepository.updateTask(taskId, currentTask);
       this.emitUpdate(currentTask);
       return { success: true, message: 'In den manuellen SVG-Editor (Tasks Checkpoint 4) übergeben.' };
     }
@@ -2064,7 +2082,8 @@ export class TaskLogService {
     if (typeof stepType === 'string' && stepType.startsWith('UPDATE_')) {
       const stepKey = stepType.replace('UPDATE_', '').split('_')[0];
       const { UpdatePipelineService } = require('./updatePipelineService');
-      UpdatePipelineService.runStep(taskId, stepKey).catch((err: any) => {
+      const run = stepKey === 'U1' ? UpdatePipelineService.resumeU1(taskId) : UpdatePipelineService.runStep(taskId, stepKey);
+      run.catch((err: any) => {
         console.error(`[TaskLogService] Retry Update Step ${stepKey} failed:`, err);
       });
       return { success: true, message: `Update Step ${stepKey} neu gestartet.` };
@@ -2147,26 +2166,8 @@ export class TaskLogService {
 
   /** Persistently closes one task, independent of its current review checkpoint. */
   static cancelTask(taskId: string, reason = 'Vom Benutzer im Tasks-&-Review-Menü abgebrochen.') {
-    const task = this.getTaskLogById(taskId);
-    if (!task) throw new Error(`Task ${taskId} nicht gefunden.`);
-    if (task.status === 'COMPLETED' || task.status === 'UPDATE_QUEUED') {
-      throw new Error('Ein bereits abgeschlossener oder übergebener Task kann hier nicht mehr abgebrochen werden.');
-    }
-
-    const saved = this.updateTaskStatus(taskId, {
-      status: 'CANCELLED',
-      checkpoint: undefined,
-      hasError: false,
-      errorDetails: reason
-    });
-    if (!saved) throw new Error('Task-Abbruch konnte nicht gespeichert werden.');
-    this.addEvent(taskId, {
-      timestamp: new Date().toISOString(),
-      type: 'TASK_HANDOFF',
-      title: 'Task manuell abgebrochen',
-      content: { action: 'CANCEL', reason }
-    });
-    return { success: true, message: `Task ${taskId} wurde dauerhaft abgebrochen.` };
+    const saved = TaskExecutionControl.requestCancel(taskId, reason);
+    return { success: true, message: saved.status === 'CANCEL_REQUESTED' ? 'Abbruch am nächsten sicheren Schritt angefordert.' : `Task ${taskId} wurde dauerhaft abgebrochen.`, status: saved.status };
   }
 
   static getTaskUsageMetrics(resetTimestamp: number) {

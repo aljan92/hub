@@ -954,7 +954,7 @@ export class TaskRepository {
     if (!statuses || statuses.length === 0) return [];
     const db = this.getDb();
     const placeholders = statuses.map(() => '?').join(', ');
-    const rows = db.prepare(`SELECT * FROM tasks WHERE status IN (${placeholders})`).all(...statuses);
+    const rows = db.prepare(`SELECT * FROM tasks WHERE status IN (${placeholders}) ORDER BY received_at ASC, counter ASC`).all(...statuses);
     return rows.map((r: any) => this.rowToTask(r)).filter((t): t is DesignTaskLog => t !== null);
   }
 

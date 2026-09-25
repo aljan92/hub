@@ -13,6 +13,7 @@ import { ListingValidationService } from './listingValidationService';
 import { AssetValidationService } from './assetValidationService';
 import { TaskExecutionLock } from './taskExecutionLock';
 import { PipelineExecutionCoordinator } from './pipelineExecutionCoordinator';
+import { TaskExecutionControl } from './taskExecutionControl';
 import type { FinalizationParams } from './finalizationService';
 
 export interface UpdatePipelineRunResult {
@@ -35,14 +36,15 @@ export class UpdatePipelineService {
   /**
    * Step U1: Extract Merch API Data and create #xxx-U Task
    */
-  static async stepU1_ExtractMerchData(designId: string): Promise<{ success: boolean; task?: DesignTaskLog; error?: string }> {
+  static async stepU1_ExtractMerchData(designId: string, existingTaskId?: string, continuePipeline = false): Promise<{ success: boolean; task?: DesignTaskLog; error?: string }> {
     console.log(`[UpdatePipeline] 🚀 Starte Step U1 (Merch API Extraction) für Design ${designId}...`);
     try {
-      const task = await AmazonInspectService.createUpdateTaskFromAmazon(designId);
+      const task = await AmazonInspectService.createUpdateTaskFromAmazon(designId, existingTaskId, continuePipeline);
       if (!task || !task.id) {
         return { success: false, error: 'Task konnte nicht erstellt werden' };
       }
 
+      if (task.status === 'PAUSED' || task.status === 'CANCELLED' || task.checkpoint || task.status.startsWith('AWAITING_')) return { success: true, task };
       TaskLogService.updateTaskStatus(task.id, {
         status: 'UPDATE_EXTRACTED',
         hasError: false
@@ -837,6 +839,7 @@ export class UpdatePipelineService {
     return PipelineExecutionCoordinator.runExclusive(taskId, async () => {
       return this.runFromStepWithTaskLock(taskId, startStep, owner);
     }, () => {
+      TaskExecutionControl.markWaiting(taskId, startStep);
       TaskLogService.addEvent(taskId, {
         timestamp: new Date().toISOString(),
         type: 'TASK_HANDOFF',
@@ -859,16 +862,18 @@ export class UpdatePipelineService {
     }
 
     try {
-      const isCancelled = () => this.getTask(taskId)?.status === 'CANCELLED';
+      const gate = (step: 'U2' | 'U3' | 'U4' | 'U5' | 'U6' | 'U7') => TaskExecutionControl.beforeStep(taskId, step) === 'run';
+      const next = (step?: 'U2' | 'U3' | 'U4' | 'U5' | 'U6' | 'U7') => TaskExecutionControl.afterStep(taskId, step) === 'run';
 
       if (startStep === 'U2') {
-        if (isCancelled()) return { success: false, error: 'Task was cancelled by user.' };
+        if (!gate('U2')) return { success: false, task: this.getTask(taskId), error: 'Task was cancelled or paused.' };
         const u2 = await this.stepU2_DownloadArtwork(taskId);
         if (!u2.success) return { success: false, error: u2.error, failedStep: 'U2' };
+        if (!next('U3')) return { success: false, task: this.getTask(taskId), error: 'Task pausiert oder abgebrochen.' };
       }
 
       if (startStep === 'U2' || startStep === 'U3') {
-        if (isCancelled()) return { success: false, error: 'Task was cancelled by user.' };
+        if (!gate('U3')) return { success: false, task: this.getTask(taskId), error: 'Task pausiert oder abgebrochen.' };
         const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
         if (!u3.success) return { success: false, error: u3.error, failedStep: 'U3', tokenRelevantFailure: true };
 
@@ -887,6 +892,12 @@ export class UpdatePipelineService {
             pauseReason = 'Amazon Rejection erkannt – Manuelle Überprüfung empfohlen';
           }
 
+          TaskLogService.addEvent(taskId, {
+            timestamp: new Date().toISOString(), type: 'TASK_HANDOFF',
+            title: hasRejection ? 'Amazon-Hinweis: Design-Prüfung erforderlich' : isDefective ? 'Qualitätswarnung: Design-Prüfung erforderlich' : 'Design-Prüfung erforderlich',
+            content: { checkpoint: 'DESIGN_REVIEW', reason: pauseReason, hasRejection, isDefective }
+          });
+
           TaskLogService.updateTaskStatus(taskId, {
             status: 'AWAITING_DESIGN_REVIEW',
             checkpoint: 'DESIGN_REVIEW',
@@ -895,16 +906,18 @@ export class UpdatePipelineService {
           });
           return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: 'DESIGN_REVIEW' };
         }
+        if (!next('U4')) return { success: false, task: this.getTask(taskId), error: 'Task pausiert oder abgebrochen.' };
       }
 
       if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4') {
-        if (isCancelled()) return { success: false, error: 'Task was cancelled by user.' };
+        if (!gate('U4')) return { success: false, task: this.getTask(taskId), error: 'Task pausiert oder abgebrochen.' };
         const u4 = await this.stepU4_RewriteListing(taskId);
         if (!u4.success) return { success: false, error: u4.error, failedStep: 'U4', tokenRelevantFailure: true };
+        if (!next('U5')) return { success: false, task: this.getTask(taskId), error: 'Task pausiert oder abgebrochen.' };
       }
 
       if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4' || startStep === 'U5') {
-        if (isCancelled()) return { success: false, error: 'Task was cancelled by user.' };
+        if (!gate('U5')) return { success: false, task: this.getTask(taskId), error: 'Task pausiert oder abgebrochen.' };
         const u5 = await this.stepU5_TrademarkCheck(taskId);
         if (!u5.success) return { success: false, error: u5.error, failedStep: 'U5', tokenRelevantFailure: true };
 
@@ -912,18 +925,21 @@ export class UpdatePipelineService {
         if (task?.status === 'AWAITING_TM_REVIEW') {
           return { success: true, task, pausedAtCheckpoint: 'TM_REVIEW' };
         }
+        if (!next('U6')) return { success: false, task: this.getTask(taskId), error: 'Task pausiert oder abgebrochen.' };
       }
 
       if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4' || startStep === 'U5' || startStep === 'U6') {
-        if (isCancelled()) return { success: false, error: 'Task was cancelled by user.' };
+        if (!gate('U6')) return { success: false, task: this.getTask(taskId), error: 'Task pausiert oder abgebrochen.' };
         const u6 = await this.stepU6_TranslateListing(taskId);
         if (!u6.success) return { success: false, error: u6.error, failedStep: 'U6', tokenRelevantFailure: true };
+        if (!next('U7')) return { success: false, task: this.getTask(taskId), error: 'Task pausiert oder abgebrochen.' };
       }
 
       if (startStep === 'U2' || startStep === 'U3' || startStep === 'U4' || startStep === 'U5' || startStep === 'U6' || startStep === 'U7') {
-        if (isCancelled()) return { success: false, error: 'Task was cancelled by user.' };
+        if (!gate('U7')) return { success: false, task: this.getTask(taskId), error: 'Task pausiert oder abgebrochen.' };
         const u7 = await this.stepU7_Enqueue(taskId);
         if (!u7.success) return { success: false, error: u7.error, failedStep: 'U7' };
+        next();
       }
 
       const finalTask = this.getTask(taskId);
@@ -944,85 +960,26 @@ export class UpdatePipelineService {
   }
 
   private static async runUpdatePipelineExclusive(designId: string): Promise<UpdatePipelineRunResult> {
-    const isCancelled = (tId: string) => this.getTask(tId)?.status === 'CANCELLED';
-
-    // U1: Extract raw data & create task log
-    const u1 = await this.stepU1_ExtractMerchData(designId);
+    // U1 has no task ID yet. The design ID reserves the FIFO slot until U1 creates it;
+    // subsequent steps use the same execution context and durable task control.
+    const u1 = await this.stepU1_ExtractMerchData(designId, undefined, true);
     if (!u1.success || !u1.task) return { success: false, error: u1.error, failedStep: 'U1' };
     const taskId = u1.task.id;
+    if (u1.task.checkpoint || u1.task.status.startsWith('AWAITING_')) return { success: true, task: u1.task, pausedAtCheckpoint: u1.task.checkpoint };
+    if (u1.task.status === 'PAUSED' || u1.task.status === 'CANCELLED') return { success: false, task: u1.task, error: 'Task pausiert oder abgebrochen.', failedStep: 'U1' };
+    return this.runFromStep(taskId, 'U2');
+  }
 
-    if (isCancelled(taskId)) {
-      console.log(`[UpdatePipeline] 🛑 Task ${taskId} wurde nach U1 abgebrochen. Breche Pipeline ab.`);
-      return { success: false, error: 'Task wurde vom Benutzer abgebrochen', task: this.getTask(taskId), failedStep: 'U1' };
-    }
-
-    // U2: Download Master-Artwork PNG
-    const u2 = await this.stepU2_DownloadArtwork(taskId);
-    if (!u2.success) return { success: false, task: this.getTask(taskId), error: u2.error, failedStep: 'U2' };
-
-    if (isCancelled(taskId)) {
-      console.log(`[UpdatePipeline] 🛑 Task ${taskId} wurde nach U2 abgebrochen. Breche Pipeline ab.`);
-      return { success: false, error: 'Task wurde vom Benutzer abgebrochen', task: this.getTask(taskId), failedStep: 'U2' };
-    }
-
-    // U3: Vision & Listing Analysis
-    const u3 = await this.stepU3_AnalyzeAndPrompt(taskId);
-    if (!u3.success) return { success: false, task: this.getTask(taskId), error: u3.error, failedStep: 'U3', tokenRelevantFailure: true };
-
-    if (isCancelled(taskId)) {
-      console.log(`[UpdatePipeline] 🛑 Task ${taskId} wurde nach U3 abgebrochen. Breche Pipeline ab.`);
-      return { success: false, error: 'Task wurde vom Benutzer abgebrochen', task: this.getTask(taskId), failedStep: 'U3' };
-    }
-
-    // Check AI Autonomy Switch & Quality Assessment for Update Pipeline
-    const settings = loadSettings();
-    const autonomyUpdate = settings.aiAutonomyUpdateEnabled ?? settings.aiAutonomyEnabled;
-    const isDefective = u3.analysisResult?.design_quality?.quality_verdict === 'DEFECTIVE' || u3.analysisResult?.overall_verdict === 'REJECTED';
-    const qualityReason = u3.analysisResult?.design_quality?.quality_issues;
-    const taskCurrent = this.getTask(taskId);
-    const hasRejection = Boolean(taskCurrent?.payload?.hasRejection);
-    const rejectionReason = taskCurrent?.payload?.rejectionReason;
-
-    if (!autonomyUpdate || isDefective || hasRejection) {
-      const pauseReason = hasRejection
-        ? `⚠️ Amazon Rejection / Richtlinien-Hinweis auf Amazon festgestellt (${rejectionReason || 'Mindestens ein Produkt/Marktplatz abgelehnt oder beanstandet'}). Autonomie gestoppt zur manuellen Freigabe in Tasks.`
-        : isDefective
-          ? `⚠️ Mangelhafte Design-Qualität erkannt (${qualityReason || 'Kantenfehler/Halos/Artefakte'}). Autonomie pausiert zur manuellen Sichtprüfung.`
-          : 'Vision-Analyse abgeschlossen. Wartet auf manuelle Prüfung von Zielgruppe, Farbausschluss und Rewrite in Tasks.';
-
-      console.log(`[UpdatePipeline] 🛑 Task ${taskId} pausiert bei Checkpoint 2 (Design- & Rejection-Prüfung) in Tasks: ${pauseReason}`);
-      TaskLogService.addEvent(taskId, {
-        timestamp: new Date().toISOString(),
-        type: 'TASK_HANDOFF',
-        title: hasRejection 
-          ? '⚠️ Amazon Rejection erkannt: Übergeben an Tasks zur manuellen Freigabe'
-          : (isDefective ? '⚠️ Qualitätswarnung: Übergeben an Tasks' : 'Übergeben an Tasks (Design- & Fragen-Prüfung)'),
-        content: {
-          checkpoint: 'DESIGN_REVIEW',
-          reason: pauseReason,
-          hasRejection,
-          rejectionReason,
-          isApproved: !isDefective && !hasRejection,
-          analysis: u3.analysisResult,
-          isDefective,
-          qualityIssues: qualityReason
-        }
-      });
-
-      TaskLogService.updateTaskStatus(taskId, {
-        status: 'AWAITING_DESIGN_REVIEW',
-        checkpoint: 'DESIGN_REVIEW',
-        analysisResult: u3.analysisResult,
-        needsManualReview: true,
-        hasError: isDefective || hasRejection
-      });
-
-      return { success: true, task: this.getTask(taskId), pausedAtCheckpoint: 'DESIGN_REVIEW' };
-    }
-
-    // If autonomy is enabled and design quality is approved, proceed automatically through U4 -> U7
-    const result = await this.runFromStep(taskId, 'U4');
-    return result.success || result.task ? result : { ...result, task: this.getTask(taskId) };
+  static async resumeU1(taskId: string): Promise<UpdatePipelineRunResult> {
+    const task = this.getTask(taskId);
+    if (!task?.payload?.designId || task.inQueue || task.checkpoint) return { success: false, error: 'U1 kann nicht sicher fortgesetzt werden.' };
+    return PipelineExecutionCoordinator.runExclusive(`UPDATE:${task.payload.designId}`, async () => {
+      const u1 = await this.stepU1_ExtractMerchData(task.payload.designId, taskId, true);
+      if (!u1.success || !u1.task) return { success: false, error: u1.error, failedStep: 'U1' };
+      if (u1.task.checkpoint || u1.task.status.startsWith('AWAITING_')) return { success: true, task: u1.task, pausedAtCheckpoint: u1.task.checkpoint };
+      if (u1.task.status === 'PAUSED' || u1.task.status === 'CANCELLED') return { success: false, task: u1.task, error: 'Task pausiert oder abgebrochen.', failedStep: 'U1' };
+      return this.runFromStep(taskId, 'U2');
+    });
   }
 
   /**
@@ -1052,7 +1009,15 @@ export class UpdatePipelineService {
    * Run a single step (for Retry or Step-Back)
    */
   static async runStep(taskId: string, step: string): Promise<{ success: boolean; data?: any; error?: string }> {
-    return PipelineExecutionCoordinator.runExclusive(taskId, () => this.runStepExclusive(taskId, step));
+    const order = ['U2', 'U3', 'U4', 'U5', 'U6', 'U7'] as const;
+    const normalized = step.toUpperCase().trim();
+    const pipelineStep = order.find(item => item === normalized);
+    return PipelineExecutionCoordinator.runExclusive(taskId, async () => {
+      if (pipelineStep && TaskExecutionControl.beforeStep(taskId, pipelineStep) !== 'run') return { success: false, error: 'Task pausiert oder abgebrochen.' };
+      const result = await this.runStepExclusive(taskId, step);
+      if (pipelineStep && result.success) TaskExecutionControl.afterStep(taskId, order[order.indexOf(pipelineStep) + 1]);
+      return result;
+    }, () => { if (pipelineStep) TaskExecutionControl.markWaiting(taskId, pipelineStep); });
   }
 
   private static async runStepExclusive(taskId: string, step: string): Promise<{ success: boolean; data?: any; error?: string }> {
@@ -1060,7 +1025,7 @@ export class UpdatePipelineService {
       case 'U1': {
         const task = this.getTask(taskId);
         if (!task?.payload?.designId) return { success: false, error: 'Design ID fehlt' };
-        return await this.stepU1_ExtractMerchData(task.payload.designId);
+        return await this.stepU1_ExtractMerchData(task.payload.designId, taskId);
       }
       case 'U2': return await this.stepU2_DownloadArtwork(taskId);
       case 'U3': return await this.stepU3_AnalyzeAndPrompt(taskId);

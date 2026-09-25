@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import PromptLogTimeline from './PromptLogTimeline';
-import { Terminal, Send, Search, Copy, Check, Trash2, RefreshCw, Bot, TestTube, Sparkles, Clock, Globe, Code2, CheckCircle2, Image as ImageIcon, ExternalLink, RotateCcw, AlertTriangle, FileJson, Database, SearchCode, Ban, FastForward } from 'lucide-react';
+import { Terminal, Send, Search, Copy, Check, Trash2, RefreshCw, Bot, TestTube, Sparkles, Clock, Globe, Code2, CheckCircle2, Image as ImageIcon, ExternalLink, RotateCcw, AlertTriangle, FileJson, Database, SearchCode, Ban, FastForward, Pause, Play } from 'lucide-react';
 
 import { 
   DesignTaskLog, 
@@ -208,6 +208,7 @@ export const PromptLogView: React.FC<{ isActive: boolean }> = ({ isActive }) => 
   const [downloadingArtworkTaskId, setDownloadingArtworkTaskId] = useState<string | null>(null);
   const [runningUpdatePipelineTaskId, setRunningUpdatePipelineTaskId] = useState<string | null>(null);
   const [cancellingTaskId, setCancellingTaskId] = useState<string | null>(null);
+  const [controllingTaskId, setControllingTaskId] = useState<string | null>(null);
   const [skippingUpdateTaskId, setSkippingUpdateTaskId] = useState<string | null>(null);
 
   const handleRunFullUpdatePipeline = async (designId: string) => {
@@ -648,7 +649,27 @@ export const PromptLogView: React.FC<{ isActive: boolean }> = ({ isActive }) => 
 
   const isTaskCancellable = (task?: TaskSummary | DesignTaskLog | null) => {
     if (!task) return false;
-    return !['COMPLETED', 'UPDATE_QUEUED', 'CANCELLED', 'REJECTED'].includes(task.status);
+    return !['COMPLETED', 'UPDATE_QUEUED', 'CANCELLED', 'CANCEL_REQUESTED', 'REJECTED'].includes(task.status);
+  };
+
+  const canPauseTask = (task?: TaskSummary | DesignTaskLog | null) =>
+    Boolean(task && !task.checkpoint && !task.inQueue && !['COMPLETED', 'UPDATE_QUEUED', 'CANCELLED', 'CANCEL_REQUESTED', 'REJECTED', 'ERROR', 'PAUSED', 'PAUSE_REQUESTED'].includes(task.status));
+
+  const handleTaskControl = async (taskId: string, action: 'pause' | 'resume', e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (controllingTaskId) return;
+    setControllingTaskId(taskId);
+    try {
+      const res = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/${action}`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Task-Steuerung fehlgeschlagen');
+      setTasks(prev => prev.map(task => task.id === taskId ? { ...task, status: data.status } : task));
+      setSelectedTaskDetail(prev => prev?.id === taskId ? { ...prev, status: data.status } : prev);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setControllingTaskId(null);
+    }
   };
 
   const handleCancelTask = async (taskId: string, e?: React.MouseEvent) => {
@@ -676,7 +697,7 @@ export const PromptLogView: React.FC<{ isActive: boolean }> = ({ isActive }) => 
           if (t.id !== taskId) return t;
           return {
             ...t,
-            status: 'CANCELLED',
+            status: data.status || 'CANCELLED',
             checkpoint: undefined,
             hasError: false,
             errorDetails: 'Vom Benutzer im Prompt Log abgebrochen.'
@@ -685,7 +706,7 @@ export const PromptLogView: React.FC<{ isActive: boolean }> = ({ isActive }) => 
         if (selectedTask?.id === taskId) {
           setSelectedTaskDetail(prev => prev ? {
             ...prev,
-            status: 'CANCELLED',
+            status: data.status || 'CANCELLED',
             checkpoint: undefined,
             hasError: false,
             errorDetails: 'Vom Benutzer im Prompt Log abgebrochen.'
@@ -1341,6 +1362,8 @@ export const PromptLogView: React.FC<{ isActive: boolean }> = ({ isActive }) => 
                           <Ban className={`w-3 h-3 ${cancellingTaskId === task.id ? 'animate-spin' : ''}`} />
                         </button>
                       )}
+                      {canPauseTask(task) && <button onClick={(e) => handleTaskControl(task.id, 'pause', e)} disabled={controllingTaskId === task.id} className="p-1 rounded text-amber-300 hover:bg-amber-500/10 disabled:opacity-50" title="Am nächsten sicheren Schritt pausieren"><Pause className="w-3 h-3" /></button>}
+                      {task.status === 'PAUSED' && <button onClick={(e) => handleTaskControl(task.id, 'resume', e)} disabled={controllingTaskId === task.id} className="p-1 rounded text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50" title="Task fortsetzen"><Play className="w-3 h-3" /></button>}
                       {canSkipUpdate(task) && (
                         <button
                           onClick={(e) => handleSkipUpdate(task.id, e)}
@@ -1449,6 +1472,8 @@ export const PromptLogView: React.FC<{ isActive: boolean }> = ({ isActive }) => 
                       <span>Abbrechen</span>
                     </button>
                   )}
+                  {canPauseTask(selectedTask) && <button onClick={(e) => handleTaskControl(selectedTask.id, 'pause', e)} disabled={controllingTaskId === selectedTask.id} className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30 disabled:opacity-50"><Pause className="w-3.5 h-3.5" />Pausieren</button>}
+                  {selectedTask.status === 'PAUSED' && <button onClick={(e) => handleTaskControl(selectedTask.id, 'resume', e)} disabled={controllingTaskId === selectedTask.id} className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 disabled:opacity-50"><Play className="w-3.5 h-3.5" />Fortsetzen</button>}
                   {canSkipUpdate(selectedTask) && (
                     <button
                       onClick={(e) => handleSkipUpdate(selectedTask.id, e)}

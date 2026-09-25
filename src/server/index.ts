@@ -21,6 +21,7 @@ import { BrowserSessionService, BrowserSessionType } from './services/browserSes
 import { subscribeBrowserStream } from './services/browserStreamSubscription';
 import { getMcpSchema } from './services/mcpSchemaService';
 import { TaskLogService } from './services/taskLogService';
+import { TaskExecutionControl } from './services/taskExecutionControl';
 import { TaskRepository } from './storage/taskRepository';
 import { getPromptLogRawEvent, projectPromptLogTask } from './services/promptLogProjection';
 import { SystemPromptService } from './services/systemPromptService';
@@ -1273,22 +1274,37 @@ app.get('/api/v1/tasks/:taskId', (req, res) => {
 app.post('/api/v1/tasks/:taskId/cancel', (req, res) => {
   const { taskId } = req.params;
   try {
-    const task = TaskLogService.getTaskLogById(taskId);
     const result = TaskLogService.cancelTask(taskId, req.body?.reason);
-    if (task?.source === 'UPDATE' || task?.suffix === 'U') {
-      const designId = String(task.payload?.designId || '').trim();
-      if (designId) {
-        UpdateBackfillService.addRecentlyCancelledDesign(designId);
-        UpdateBackfillService.releaseInFlight(designId);
-      }
-      // Re-trigger backfill cycle or seamlessly queue it if a cycle is currently running
-      UpdateBackfillService.scheduleNextCycleAfterCancel();
-    }
     broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
     broadcast('QUEUE_UPDATED', QueueService.getState());
     res.json({ ...result, updateAutomationDisabled: false });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/tasks/:taskId/pause', (req, res) => {
+  try {
+    const task = TaskExecutionControl.requestPause(req.params.taskId);
+    res.json({ success: true, status: task.status });
+  } catch (err: any) {
+    res.status(409).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/tasks/:taskId/resume', (req, res) => {
+  try {
+    const taskId = req.params.taskId;
+    const step = TaskExecutionControl.resume(taskId);
+    const run = step === 'U1'
+      ? UpdatePipelineService.resumeU1(taskId)
+      : step.startsWith('D')
+      ? DesignPipelineService.runFromStep(taskId, step as Parameters<typeof DesignPipelineService.runFromStep>[1], 'USER_ACTION')
+      : UpdatePipelineService.runFromStep(taskId, step as Parameters<typeof UpdatePipelineService.runFromStep>[1], 'USER_ACTION');
+    void run.catch((err: any) => console.error(`[TaskResume] ${taskId}:`, err));
+    res.json({ success: true, status: 'WAITING' });
+  } catch (err: any) {
+    res.status(409).json({ success: false, error: err.message });
   }
 });
 
@@ -1313,8 +1329,6 @@ app.post('/api/v1/tasks/:taskId/skip-update', async (req, res) => {
     }
 
     const result = TaskLogService.cancelTask(taskId, 'Design dauerhaft von automatischen Updates ausgeschlossen (skip_update=true).');
-    UpdateBackfillService.releaseInFlight(designId);
-    UpdateBackfillService.addRecentlyCancelledDesign(designId);
     broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
     res.json({ ...result, message: 'Skip Update wurde gesetzt. Das Design wird künftig nicht mehr automatisch aktualisiert.' });
   } catch (err: any) {
@@ -1352,9 +1366,6 @@ app.post('/api/v1/tasks/:taskId/amazon-delete', async (req, res) => {
     // 3. Cancel task in Hub and clean up backfill / queue
     const result = TaskLogService.cancelTask(taskId, `Design bei Merch by Amazon gelöscht (${deleteResult.deletedProductsCount || 0} Produkte) und von künftigen Updates ausgeschlossen.`);
     QueueService.removeByTaskId(taskId);
-    UpdateBackfillService.releaseInFlight(designId);
-    UpdateBackfillService.addRecentlyCancelledDesign(designId);
-    UpdateBackfillService.scheduleNextCycleAfterCancel();
 
     broadcast('TASK_UPDATED', TaskLogService.getTaskSummaryById(taskId));
     broadcast('QUEUE_UPDATED', { items: QueueService.loadQueue() });
