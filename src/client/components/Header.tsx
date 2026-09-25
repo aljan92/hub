@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Layers, 
   Activity, 
@@ -28,6 +28,9 @@ interface CostStatsSummary {
 interface HeaderProps {
   tier?: number;
 }
+
+const UPDATE_ATTEMPT_KEY = 'mba_update_attempt_started_at';
+const UPDATE_MAX_AGE_MS = 15 * 60 * 1000;
 
 export const Header: React.FC<HeaderProps> = ({ tier }) => {
   const [currentTime, setCurrentTime] = useState(() => new Date());
@@ -86,8 +89,80 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updatePhase, setUpdatePhase] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateNotice, setUpdateNotice] = useState<string | null>(null);
   const [buildCommit, setBuildCommit] = useState<string | null>(null);
   const [isScreencastOpen, setIsScreencastOpen] = useState(false);
+  const updatePollRef = useRef<number | null>(null);
+
+  function stopUpdateWatch() {
+    if (updatePollRef.current !== null) window.clearInterval(updatePollRef.current);
+    updatePollRef.current = null;
+    sessionStorage.removeItem(UPDATE_ATTEMPT_KEY);
+    setIsUpdating(false);
+    setUpdatePhase(null);
+  }
+
+  function watchUpdate(startedAt: number) {
+    if (updatePollRef.current !== null) return;
+    setShowUpdateModal(true);
+    setIsUpdating(true);
+    setUpdatePhase('queued');
+    let idlePolls = 0;
+    let lastSuccessfulPoll = Date.now();
+    let polling = false;
+    updatePollRef.current = window.setInterval(async () => {
+      if (polling) return;
+      if (Date.now() - startedAt > UPDATE_MAX_AGE_MS) {
+        stopUpdateWatch();
+        setUpdateError('Update-Status nach 15 Minuten nicht bestätigt. Bitte Version prüfen.');
+        return;
+      }
+      if (Date.now() - lastSuccessfulPoll > 45_000) {
+        window.location.reload();
+        return;
+      }
+      polling = true;
+      try {
+        const response = await fetch('/api/v1/system/update/status', {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(10_000)
+        });
+        if (!response.ok) throw new Error('Status nicht erreichbar');
+        const status = await response.json();
+        lastSuccessfulPoll = Date.now();
+        const statusStartedAt = Date.parse(status.startedAt || '');
+        if (Number.isFinite(statusStartedAt) && statusStartedAt < startedAt - 2000) return;
+        if (status.phase === 'idle') {
+          idlePolls += 1;
+          if (idlePolls < 20) return;
+          stopUpdateWatch();
+          setUpdateError('Updater hat keinen Auftrag gestartet. Bitte erneut versuchen.');
+          return;
+        }
+        setUpdatePhase(status.phase);
+        if (['complete', 'unchanged', 'failed', 'blocked', 'rolled_back', 'rollback_failed'].includes(status.phase)) {
+          stopUpdateWatch();
+          if (status.phase === 'complete') window.location.reload();
+          else if (status.phase === 'unchanged') setUpdateNotice('Bereits aktuell. Kein Neustart erforderlich.');
+          else setUpdateError(status.error || 'Update fehlgeschlagen. Der bisherige Stand wurde nach Möglichkeit wiederhergestellt.');
+        }
+      } catch {
+        // The app may be restarting or the browser may have lost a response.
+      } finally {
+        polling = false;
+      }
+    }, 2000);
+  }
+
+  useEffect(() => {
+    const stored = Number(sessionStorage.getItem(UPDATE_ATTEMPT_KEY));
+    if (stored && Date.now() - stored < UPDATE_MAX_AGE_MS) watchUpdate(stored);
+    else if (stored) sessionStorage.removeItem(UPDATE_ATTEMPT_KEY);
+    return () => {
+      if (updatePollRef.current !== null) window.clearInterval(updatePollRef.current);
+      updatePollRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!showUpdateModal) return;
@@ -171,56 +246,22 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
   };
 
   const handleTriggerUpdate = async () => {
-    setIsUpdating(true);
+    const startedAt = Date.now();
+    sessionStorage.setItem(UPDATE_ATTEMPT_KEY, String(startedAt));
     setUpdateError(null);
-    setUpdatePhase('queued');
-    let polls = 0;
-    let polling = false;
-    const timer = window.setInterval(async () => {
-      if (polling) return;
-      polling = true;
-      polls += 1;
-      try {
-        const statusResponse = await fetch('/api/v1/system/update/status', { signal: AbortSignal.timeout(15000) });
-        if (!statusResponse.ok) throw new Error('Status nicht erreichbar');
-        const status = await statusResponse.json();
-        if (status.phase === 'idle' && polls < 20) return;
-        if (status.phase === 'idle') {
-          window.clearInterval(timer);
-          setIsUpdating(false);
-          setUpdatePhase(null);
-          setUpdateError('Updater hat keinen Auftrag gestartet. Bitte erneut versuchen.');
-          return;
-        }
-        setUpdatePhase(status.phase);
-        if (['complete', 'unchanged', 'failed', 'blocked', 'rolled_back', 'rollback_failed'].includes(status.phase)) {
-          window.clearInterval(timer);
-          setIsUpdating(false);
-          if (status.phase === 'complete' || status.phase === 'unchanged') window.location.reload();
-          else setUpdateError(status.error || 'Update fehlgeschlagen. Der bisherige Stand wurde nach Möglichkeit wiederhergestellt.');
-        }
-      } catch {
-        if (polls >= 450) {
-          window.clearInterval(timer);
-          setIsUpdating(false);
-          setUpdateError('Update-Status über längere Zeit nicht erreichbar. Bitte Dashboard neu laden und Version prüfen.');
-        }
-      } finally {
-        polling = false;
-      }
-    }, 2000);
+    setUpdateNotice(null);
+    watchUpdate(startedAt);
     try {
       const res = await fetch('/api/v1/system/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(30_000)
       });
       const data = await res.json();
       if (res.status === 202 || (res.status === 409 && data.error === 'update_in_progress')) return;
       if (res.status === 409 && (data.activeTaskId || data.activeUpload)) {
-        window.clearInterval(timer);
-        setIsUpdating(false);
-        setUpdatePhase(null);
+        stopUpdateWatch();
         setUpdateError(data.error || 'Laufende Arbeit blockiert das Update.');
         return;
       }
@@ -385,6 +426,10 @@ export const Header: React.FC<HeaderProps> = ({ tier }) => {
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 <span>{updateError}</span>
               </div>
+            )}
+
+            {updateNotice && (
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300">{updateNotice}</div>
             )}
 
             {updatePhase && isUpdating ? (
