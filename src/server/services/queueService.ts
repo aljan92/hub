@@ -482,11 +482,14 @@ export class QueueService {
    * Set account tier info from live MBA Dashboard / Ratelimiter
    */
   public static setAccountTierInfo(tier?: number, liveDesignsCount?: number, freeDesignsCount?: number) {
-    this.accountTierInfo = {
+    const next = {
       tier,
       liveDesignsCount,
       freeDesignsCount: freeDesignsCount !== undefined ? Math.max(0, freeDesignsCount) : undefined
     };
+    if (this.accountTierInfo.tier === next.tier && this.accountTierInfo.liveDesignsCount === next.liveDesignsCount
+      && this.accountTierInfo.freeDesignsCount === next.freeDesignsCount) return;
+    this.accountTierInfo = next;
     this.rebalanceQueue();
   }
 
@@ -500,11 +503,14 @@ export class QueueService {
   public static setDailySlots(free: number, used = 0, total = 200) {
     // Live ratelimiter data can be temporarily missing or non-numeric. Never
     // plan live uploads against an unknown capacity or pass NaN to the solver.
-    this.dailySlotsInfo = {
+    const next = {
       free: Number.isFinite(free) ? Math.max(0, Math.floor(free)) : 0,
       used: Number.isFinite(used) ? Math.max(0, Math.floor(used)) : 0,
       total: Number.isFinite(total) ? Math.max(0, Math.floor(total)) : 0
     };
+    if (this.dailySlotsInfo.free === next.free && this.dailySlotsInfo.used === next.used
+      && this.dailySlotsInfo.total === next.total) return;
+    this.dailySlotsInfo = next;
     this.rebalanceQueue();
   }
 

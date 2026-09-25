@@ -223855,11 +223855,13 @@ var init_queueService = __esm2({
        * Set account tier info from live MBA Dashboard / Ratelimiter
        */
       static setAccountTierInfo(tier, liveDesignsCount, freeDesignsCount) {
-        this.accountTierInfo = {
+        const next = {
           tier,
           liveDesignsCount,
           freeDesignsCount: freeDesignsCount !== void 0 ? Math.max(0, freeDesignsCount) : void 0
         };
+        if (this.accountTierInfo.tier === next.tier && this.accountTierInfo.liveDesignsCount === next.liveDesignsCount && this.accountTierInfo.freeDesignsCount === next.freeDesignsCount) return;
+        this.accountTierInfo = next;
         this.rebalanceQueue();
       }
       static getAccountTierInfo() {
@@ -223869,11 +223871,13 @@ var init_queueService = __esm2({
        * Set daily available slots from live MBA Dashboard / Ratelimiter
        */
       static setDailySlots(free, used = 0, total = 200) {
-        this.dailySlotsInfo = {
+        const next = {
           free: Number.isFinite(free) ? Math.max(0, Math.floor(free)) : 0,
           used: Number.isFinite(used) ? Math.max(0, Math.floor(used)) : 0,
           total: Number.isFinite(total) ? Math.max(0, Math.floor(total)) : 0
         };
+        if (this.dailySlotsInfo.free === next.free && this.dailySlotsInfo.used === next.used && this.dailySlotsInfo.total === next.total) return;
+        this.dailySlotsInfo = next;
         this.rebalanceQueue();
       }
       /**
@@ -232333,6 +232337,7 @@ var init_updateBackfillService = __esm2({
       static isRunningLoop = false;
       static activeCycle = null;
       static intervalId = null;
+      static metadataIntervalId = null;
       static lastWarningTime = 0;
       static WARNING_THROTTLE_MS = 5 * 60 * 1e3;
       // 5 Minuten Drosselung
@@ -232764,9 +232769,13 @@ var init_updateBackfillService = __esm2({
         void UpdateMetadataService.retryPendingConfirmedUpdates().catch((err) => {
           console.warn("[UpdateBackfillService] Initialer Metadaten-Nachlauf fehlgeschlagen:", err?.message || err);
         });
+        this.metadataIntervalId = setInterval(() => {
+          void UpdateMetadataService.retryPendingConfirmedUpdates().catch((err) => {
+            console.warn("[UpdateBackfillService] Metadaten-Nachlauf fehlgeschlagen:", err?.message || err);
+          });
+        }, 6e4);
         this.intervalId = setInterval(async () => {
           try {
-            await UpdateMetadataService.retryPendingConfirmedUpdates();
             const settings = loadSettings();
             const tokenburn = this.getTokenburnProtection(settings);
             if (settings.queueUpdateAutoBackfillEnabled && !tokenburn.paused && !this.isRunningLoop) {
@@ -232800,6 +232809,10 @@ var init_updateBackfillService = __esm2({
        * Stop background polling scheduler
        */
       static stopScheduler() {
+        if (this.metadataIntervalId) {
+          clearInterval(this.metadataIntervalId);
+          this.metadataIntervalId = null;
+        }
         if (this.intervalId) {
           clearInterval(this.intervalId);
           this.intervalId = null;

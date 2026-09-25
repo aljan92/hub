@@ -29,6 +29,7 @@ export class UpdateBackfillService {
   private static isRunningLoop = false;
   private static activeCycle: Promise<{ success: boolean; message: string; designId?: string }> | null = null;
   private static intervalId: NodeJS.Timeout | null = null;
+  private static metadataIntervalId: NodeJS.Timeout | null = null;
   private static lastWarningTime = 0;
   private static readonly WARNING_THROTTLE_MS = 5 * 60 * 1000; // 5 Minuten Drosselung
 
@@ -569,9 +570,13 @@ export class UpdateBackfillService {
     void UpdateMetadataService.retryPendingConfirmedUpdates().catch(err => {
       console.warn('[UpdateBackfillService] Initialer Metadaten-Nachlauf fehlgeschlagen:', err?.message || err);
     });
+    this.metadataIntervalId = setInterval(() => {
+      void UpdateMetadataService.retryPendingConfirmedUpdates().catch(err => {
+        console.warn('[UpdateBackfillService] Metadaten-Nachlauf fehlgeschlagen:', err?.message || err);
+      });
+    }, 60_000);
     this.intervalId = setInterval(async () => {
       try {
-        await UpdateMetadataService.retryPendingConfirmedUpdates();
         const settings = loadSettings();
         const tokenburn = this.getTokenburnProtection(settings);
         if (settings.queueUpdateAutoBackfillEnabled && !tokenburn.paused && !this.isRunningLoop) {
@@ -609,6 +614,10 @@ export class UpdateBackfillService {
    * Stop background polling scheduler
    */
   public static stopScheduler() {
+    if (this.metadataIntervalId) {
+      clearInterval(this.metadataIntervalId);
+      this.metadataIntervalId = null;
+    }
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;

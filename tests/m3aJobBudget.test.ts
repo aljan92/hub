@@ -36,3 +36,16 @@ try {
   UpdateMetadataService.markSuccessfulUpdate = originalMark;
   QueueService.updateItemUploadRecovery = originalUpdate;
 }
+
+const originalRebalance = QueueService.rebalanceQueue;
+let rebalances = 0;
+try {
+  QueueService.rebalanceQueue = (() => { rebalances++; return {} as ReturnType<typeof QueueService.rebalanceQueue>; }) as typeof QueueService.rebalanceQueue;
+  QueueService.setDailySlots(12345, 5, 30000);
+  QueueService.setDailySlots(12345, 5, 30000);
+  QueueService.setAccountTierInfo(99, 10, 20);
+  QueueService.setAccountTierInfo(99, 10, 20);
+  assert.equal(rebalances, 2, 'unchanged live planning inputs do not rewrite the queue');
+} finally {
+  QueueService.rebalanceQueue = originalRebalance;
+}
