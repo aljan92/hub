@@ -223841,7 +223841,11 @@ var init_queueService = __esm2({
        * Set daily available slots from live MBA Dashboard / Ratelimiter
        */
       static setDailySlots(free, used = 0, total = 200) {
-        this.dailySlotsInfo = { free: Math.max(0, free), used, total };
+        this.dailySlotsInfo = {
+          free: Number.isFinite(free) ? Math.max(0, Math.floor(free)) : 0,
+          used: Number.isFinite(used) ? Math.max(0, Math.floor(used)) : 0,
+          total: Number.isFinite(total) ? Math.max(0, Math.floor(total)) : 0
+        };
         this.rebalanceQueue();
       }
       /**
@@ -224373,7 +224377,7 @@ var init_queueService = __esm2({
             positiveSlotItems.push(item);
           }
         }
-        if (capacity <= 0 || positiveSlotItems.length === 0) {
+        if (!Number.isSafeInteger(capacity) || capacity <= 0 || positiveSlotItems.length === 0) {
           return { selectedIds, usedSlots: 0 };
         }
         const dp = new Array(capacity + 1).fill(null);
@@ -224417,7 +224421,8 @@ var init_queueService = __esm2({
         const isDraftMode = mode === "draft";
         const isLiveMode = mode === "live";
         const isHybridMode = mode === "hybrid";
-        const freeDailySlots = freeSlotsOverride !== void 0 ? freeSlotsOverride : this.dailySlotsInfo.free;
+        const rawFreeSlots = freeSlotsOverride !== void 0 ? freeSlotsOverride : this.dailySlotsInfo.free;
+        const freeDailySlots = Number.isFinite(rawFreeSlots) ? Math.max(0, Math.floor(rawFreeSlots)) : 0;
         const maxDrop = settings.queueMaxDropPerDesign ?? 10;
         const droppableProducts = ProductCatalogService.getDroppableProductsOrdered();
         const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();

@@ -122,6 +122,18 @@ async function runKnapsackTests() {
   }
 
   // ----------------------------------------------------
+  // Invalid live slot data must not allocate uploads or throw on Array(NaN).
+  // ----------------------------------------------------
+  {
+    const candidates = [createMockItem('U_ZERO', 0), createMockItem('U_POS', 25)];
+    for (const capacity of [NaN, Infinity, 25.5]) {
+      const result = QueueService.solveBestFitUpdateKnapsack(candidates, capacity);
+      assert(result.usedSlots === 0 && result.selectedIds.has('U_ZERO') && !result.selectedIds.has('U_POS'),
+        `Invalid capacity ${String(capacity)} fails closed`);
+    }
+  }
+
+  // ----------------------------------------------------
   // Summary
   // ----------------------------------------------------
   console.log('\n====================================================');

@@ -498,7 +498,13 @@ export class QueueService {
    * Set daily available slots from live MBA Dashboard / Ratelimiter
    */
   public static setDailySlots(free: number, used = 0, total = 200) {
-    this.dailySlotsInfo = { free: Math.max(0, free), used, total };
+    // Live ratelimiter data can be temporarily missing or non-numeric. Never
+    // plan live uploads against an unknown capacity or pass NaN to the solver.
+    this.dailySlotsInfo = {
+      free: Number.isFinite(free) ? Math.max(0, Math.floor(free)) : 0,
+      used: Number.isFinite(used) ? Math.max(0, Math.floor(used)) : 0,
+      total: Number.isFinite(total) ? Math.max(0, Math.floor(total)) : 0
+    };
     this.rebalanceQueue();
   }
 
@@ -1185,7 +1191,7 @@ export class QueueService {
       }
     }
 
-    if (capacity <= 0 || positiveSlotItems.length === 0) {
+    if (!Number.isSafeInteger(capacity) || capacity <= 0 || positiveSlotItems.length === 0) {
       return { selectedIds, usedSlots: 0 };
     }
 
@@ -1243,7 +1249,8 @@ export class QueueService {
     const isDraftMode = mode === 'draft';
     const isLiveMode = mode === 'live';
     const isHybridMode = mode === 'hybrid';
-    const freeDailySlots = freeSlotsOverride !== undefined ? freeSlotsOverride : this.dailySlotsInfo.free;
+    const rawFreeSlots = freeSlotsOverride !== undefined ? freeSlotsOverride : this.dailySlotsInfo.free;
+    const freeDailySlots = Number.isFinite(rawFreeSlots) ? Math.max(0, Math.floor(rawFreeSlots)) : 0;
     const maxDrop = settings.queueMaxDropPerDesign ?? 10;
     const droppableProducts = ProductCatalogService.getDroppableProductsOrdered();
     const maxCatalogSlots = ProductCatalogService.getTotalBaseSlotsCount();
