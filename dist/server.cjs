@@ -230892,6 +230892,7 @@ var init_designPipelineService = __esm2({
             } else if (step === "D5") {
               const r5 = await this.stepD5_GenerateListing(taskId);
               if (!r5.success) return { success: false, currentStep: "D5", error: r5.error };
+              return { success: true, currentStep: "D5" };
             } else if (step === "D6") {
               const r6 = await this.stepD6_TrademarkCheck(taskId);
               if (!r6.success) return { success: false, currentStep: "D6", error: r6.error };
@@ -230899,6 +230900,7 @@ var init_designPipelineService = __esm2({
               if (task?.status === "AWAITING_TM_REVIEW") {
                 return { success: true, currentStep: "D6", pausedAtCheckpoint: "TM_REVIEW" };
               }
+              return { success: true, currentStep: "D6" };
             } else if (step === "D7") {
               const r7 = await this.stepD7_VectorizeAndAudit(taskId);
               if (!r7.success) return { success: false, currentStep: "D7", error: r7.error };
@@ -230906,6 +230908,7 @@ var init_designPipelineService = __esm2({
               if (task?.status === "AWAITING_SVG_REVIEW") {
                 return { success: true, currentStep: "D7", pausedAtCheckpoint: "SVG_REVIEW" };
               }
+              return { success: true, currentStep: "D7" };
             } else if (step === "D8") {
               const r8 = await this.stepD8_Enqueue(taskId);
               if (!r8.success) return { success: false, currentStep: "D8", error: r8.error };
@@ -236057,13 +236060,13 @@ Beantworte die Analysefragen streng als JSON!`;
             console.log(`[TaskLogService] \u{1F916} F\xFChre LLM Vision Cutout-Audit nach SVG-Freigabe f\xFCr Task ${taskId} durch...`);
             const auditResult = task.svgApproval.auditApproved && task.svgAuditResult?.cutout_verdict === "APPROVED" ? task.svgAuditResult : await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
             task.svgAuditResult = auditResult;
-            this.persistArtworkState(task);
-            if (auditResult.cutout_verdict === "APPROVED") {
-              const current = this.getTaskLogById(taskId);
-              if (current?.svgApproval?.sha256 === sha256) this.updateTaskStatus(taskId, {
-                svgApproval: { ...current.svgApproval, auditApproved: true }
-              });
-            }
+            const savedAudit = this.updateTaskStatus(taskId, {
+              localFourPanelImagePath: fourPanelFilePath,
+              fourPanelImageUrl: fourPanelUrl,
+              svgAuditResult: auditResult,
+              svgApproval: { ...task.svgApproval, auditApproved: auditResult.cutout_verdict === "APPROVED" }
+            });
+            if (!savedAudit) throw new Error("Cutout-Befund konnte nicht gespeichert werden.");
             this.addEvent(taskId, {
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               type: "SVG_AUDIT_RESPONSE",

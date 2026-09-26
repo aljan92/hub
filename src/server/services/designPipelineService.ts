@@ -382,6 +382,9 @@ export class DesignPipelineService {
         } else if (step === 'D5') {
           const r5 = await this.stepD5_GenerateListing(taskId);
           if (!r5.success) return { success: false, currentStep: 'D5', error: r5.error };
+          // TaskLogService already advances D5 -> D6 -> D7. Re-entering this
+          // loop would repeat provider calls and can reopen a finished review.
+          return { success: true, currentStep: 'D5' };
         } else if (step === 'D6') {
           const r6 = await this.stepD6_TrademarkCheck(taskId);
           if (!r6.success) return { success: false, currentStep: 'D6', error: r6.error };
@@ -390,6 +393,7 @@ export class DesignPipelineService {
           if (task?.status === 'AWAITING_TM_REVIEW') {
             return { success: true, currentStep: 'D6', pausedAtCheckpoint: 'TM_REVIEW' };
           }
+          return { success: true, currentStep: 'D6' };
         } else if (step === 'D7') {
           const r7 = await this.stepD7_VectorizeAndAudit(taskId);
           if (!r7.success) return { success: false, currentStep: 'D7', error: r7.error };
@@ -398,6 +402,7 @@ export class DesignPipelineService {
           if (task?.status === 'AWAITING_SVG_REVIEW') {
             return { success: true, currentStep: 'D7', pausedAtCheckpoint: 'SVG_REVIEW' };
           }
+          return { success: true, currentStep: 'D7' };
         } else if (step === 'D8') {
           const r8 = await this.stepD8_Enqueue(taskId);
           if (!r8.success) return { success: false, currentStep: 'D8', error: r8.error };
