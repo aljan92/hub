@@ -27514,7 +27514,7 @@ var require_websocket = __commonJS2({
     var http2 = require("http");
     var net = require("net");
     var tls = require("tls");
-    var { randomBytes, createHash: createHash7 } = require("crypto");
+    var { randomBytes, createHash: createHash8 } = require("crypto");
     var { Duplex, Readable: Readable2 } = require("stream");
     var { URL: URL2 } = require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -28182,7 +28182,7 @@ var require_websocket = __commonJS2({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest2 = createHash7("sha1").update(key + GUID).digest("base64");
+        const digest2 = createHash8("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest2) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -28551,7 +28551,7 @@ var require_websocket_server = __commonJS2({
     var EventEmitter = require("events");
     var http2 = require("http");
     var { Duplex } = require("stream");
-    var { createHash: createHash7 } = require("crypto");
+    var { createHash: createHash8 } = require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -28858,7 +28858,7 @@ var require_websocket_server = __commonJS2({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest2 = createHash7("sha1").update(key + GUID).digest("base64");
+        const digest2 = createHash8("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -69827,7 +69827,7 @@ var require_utilsBundle = __commonJS2({
         var http22 = require("http");
         var net4 = require("net");
         var tls3 = require("tls");
-        var { randomBytes, createHash: createHash7 } = require("crypto");
+        var { randomBytes, createHash: createHash8 } = require("crypto");
         var { Duplex, Readable: Readable2 } = require("stream");
         var { URL: URL5 } = require("url");
         var PerMessageDeflate2 = require_permessage_deflate2();
@@ -70495,7 +70495,7 @@ var require_utilsBundle = __commonJS2({
               abortHandshake(websocket, socket, "Invalid Upgrade header");
               return;
             }
-            const digest2 = createHash7("sha1").update(key + GUID).digest("base64");
+            const digest2 = createHash8("sha1").update(key + GUID).digest("base64");
             if (res.headers["sec-websocket-accept"] !== digest2) {
               abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
               return;
@@ -70858,7 +70858,7 @@ var require_utilsBundle = __commonJS2({
         var EventEmitter22 = require("events");
         var http22 = require("http");
         var { Duplex } = require("stream");
-        var { createHash: createHash7 } = require("crypto");
+        var { createHash: createHash8 } = require("crypto");
         var extension2 = require_extension2();
         var PerMessageDeflate2 = require_permessage_deflate2();
         var subprotocol2 = require_subprotocol2();
@@ -71165,7 +71165,7 @@ var require_utilsBundle = __commonJS2({
               );
             }
             if (this._state > RUNNING) return abortHandshake(socket, 503);
-            const digest2 = createHash7("sha1").update(key + GUID).digest("base64");
+            const digest2 = createHash8("sha1").update(key + GUID).digest("base64");
             const headers = [
               "HTTP/1.1 101 Switching Protocols",
               "Upgrade: websocket",
@@ -144370,7 +144370,7 @@ ${value2}`, dataLines++;
         this._protocolVersion = version22;
       }
     };
-    var import_node_crypto11 = require("node:crypto");
+    var import_node_crypto12 = require("node:crypto");
     var import_node_tls = require("node:tls");
     var import_bytes = __toESM3(require_bytes2());
     function getRawBody(req, { limit, encoding }) {
@@ -144406,7 +144406,7 @@ ${value2}`, dataLines++;
       constructor(_endpoint, res, options2) {
         this._endpoint = _endpoint;
         this.res = res;
-        this._sessionId = (0, import_node_crypto11.randomUUID)();
+        this._sessionId = (0, import_node_crypto12.randomUUID)();
         this._options = options2 || { enableDnsRebindingProtection: false };
       }
       /**
@@ -231568,6 +231568,7 @@ var init_taskRecoveryService = __esm2({
         "UPDATE_TM_CHECKED",
         "TRANSLATING_LISTING",
         "VECTORIZING_DESIGN",
+        "SVG_AUDITING",
         "FINALIZING",
         "UPDATE_TRANSLATED"
       ];
@@ -232211,6 +232212,11 @@ var init_taskRecoveryService = __esm2({
           }
           case "FINALIZING": {
             return await TaskLogService.completeTaskAndEnqueue(taskId);
+          }
+          case "SVG_AUDITING": {
+            await TaskLogService.continueApprovedSvg(taskId);
+            const resumed = TaskLogService.getTaskLogById(taskId);
+            return resumed?.status === "ERROR" ? { success: false, error: resumed.errorDetails || "SVG-Fortsetzung fehlgeschlagen" } : { success: true, pausedAtCheckpoint: resumed?.status === "AWAITING_SVG_REVIEW" ? "SVG_REVIEW" : void 0 };
           }
           case "VECTORIZING_DESIGN": {
             const svgPath = import_path82.default.resolve(process.cwd(), "data", "designs", `${cleanId}.svg`);
@@ -233470,12 +233476,13 @@ __export2(taskLogService_exports, {
   isTaskAwaitingUserAction: () => isTaskAwaitingUserAction,
   toTaskSummary: () => toTaskSummary
 });
-var import_fs90, import_path84, TaskLogService;
+var import_fs90, import_path84, import_node_crypto9, TaskLogService;
 var init_taskLogService = __esm2({
   "src/server/services/taskLogService.ts"() {
     "use strict";
     import_fs90 = __toESM2(require("fs"), 1);
     import_path84 = __toESM2(require("path"), 1);
+    import_node_crypto9 = require("node:crypto");
     init_settingsService();
     init_systemPromptService();
     init_ideogramService();
@@ -235946,109 +235953,36 @@ Beantworte die Analysefragen streng als JSON!`;
         const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
         const designsDir = import_path84.default.resolve(process.cwd(), "data", "designs");
         if (params2.action === "APPROVE") {
-          if (params2.editedSvgContent) {
-            if (!import_fs90.default.existsSync(designsDir)) {
-              try {
-                import_fs90.default.mkdirSync(designsDir, { recursive: true });
-              } catch (e) {
-              }
-            }
-            const svgFilePath = import_path84.default.join(designsDir, `${cleanId}.svg`);
-            import_fs90.default.writeFileSync(svgFilePath, params2.editedSvgContent, "utf-8");
-            task.svgContent = params2.editedSvgContent;
-            task.localSvgPath = svgFilePath;
-            task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`;
-          }
           const finalSvg = task.svgContent || params2.editedSvgContent || "";
-          const ts = Date.now();
-          console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Testbild nach SVG-Freigabe f\xFCr Task ${taskId}...`);
-          const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
-          const fourPanelFilePath = import_path84.default.join(designsDir, `${cleanId}_4panel.png`);
-          import_fs90.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
-          task.localFourPanelImagePath = fourPanelFilePath;
-          const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
-          task.fourPanelImageUrl = fourPanelUrl;
+          const acceptedSvg = params2.editedSvgContent || finalSvg;
+          if (!acceptedSvg.trim()) throw new Error("Freizugebendes SVG fehlt.");
+          import_fs90.default.mkdirSync(designsDir, { recursive: true });
+          const sha256 = (0, import_node_crypto9.createHash)("sha256").update(acceptedSvg).digest("hex");
+          const svgFilePath = import_path84.default.join(designsDir, `${cleanId}_review_${sha256}.svg`);
+          if (!import_fs90.default.existsSync(svgFilePath)) import_fs90.default.writeFileSync(svgFilePath, acceptedSvg, "utf-8");
+          const saved = this.updateTaskStatus(taskId, {
+            status: "SVG_AUDITING",
+            checkpoint: void 0,
+            hasError: false,
+            errorDetails: void 0,
+            svgContent: acceptedSvg,
+            localSvgPath: svgFilePath,
+            svgUrl: `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`,
+            svgApproval: { path: svgFilePath, sha256, acceptedAt: (/* @__PURE__ */ new Date()).toISOString() }
+          });
+          if (!saved || saved.status !== "SVG_AUDITING") throw new Error("SVG-Freigabe konnte nicht gespeichert werden.");
           this.addEvent(taskId, {
             timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "SVG_AUDIT_REQUEST",
-            title: `Senden an LLM Vision (4-Panel Cutout-Pr\xFCfung nach Freigabe)`,
-            content: {
-              fourPanelImageUrl: fourPanelUrl,
-              quote: task.payload?.quote
-            },
-            metadata: {
-              provider: "OpenRouter Vision"
-            }
+            type: "SVG_EDIT_RESPONSE",
+            title: "SVG-Freigabe gespeichert; Cutout-Pr\xFCfung folgt",
+            content: { sha256 }
           });
-          console.log(`[TaskLogService] \u{1F916} F\xFChre LLM Vision Cutout-Audit nach SVG-Freigabe f\xFCr Task ${taskId} durch...`);
-          const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
-          task.svgAuditResult = auditResult;
-          this.persistArtworkState(task);
-          this.addEvent(taskId, {
-            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            type: "SVG_AUDIT_RESPONSE",
-            title: `Empfangen von LLM Vision (${auditResult.cutout_verdict === "APPROVED" ? "Cutout Freigegeben \u2713" : "Korrektur n\xF6tig \u26A0\uFE0F"})`,
-            content: {
-              verdict: auditResult.cutout_verdict,
-              backgroundClean: auditResult.background_removed_cleanly,
-              detectedIssues: auditResult.detected_issues,
-              explanation: auditResult.explanation,
-              fourPanelImageUrl: fourPanelUrl
-            },
-            metadata: {
-              provider: "OpenRouter Vision",
-              latencyMs: auditResult.latencyMs,
-              tokens: auditResult.tokens
-            }
+          setImmediate(() => {
+            void this.continueApprovedSvg(taskId).catch((error) => {
+              console.error(`[TaskLogService] SVG continuation failed for ${taskId}:`, error);
+            });
           });
-          if (auditResult.cutout_verdict === "APPROVED") {
-            console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
-            const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
-            const mbaFilePath = import_path84.default.join(designsDir, `${cleanId}_mba.png`);
-            import_fs90.default.writeFileSync(mbaFilePath, mbaBuffer);
-            task.localMbaPngPath = mbaFilePath;
-            task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
-            const thumbFilePath = import_path84.default.join(designsDir, `${cleanId}_thumb.png`);
-            VisionOptimizationService.prepareThumbnailImage(mbaFilePath, thumbFilePath, 320).catch((err) => {
-              console.warn(`[TaskLogService] Background thumbnail pre-generation failed for ${taskId}:`, err.message);
-            });
-            this.addEvent(taskId, {
-              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-              type: "SVG_EDIT_RESPONSE",
-              title: `SVG Design & MBA Print-PNG final freigegeben (Cutout von Vision-KI best\xE4tigt \u2713)`,
-              content: {
-                verdict: "APPROVED",
-                svgUrl: task.svgUrl,
-                mbaPngUrl: task.mbaPngUrl,
-                fourPanelImageUrl: task.fourPanelImageUrl,
-                svgLength: finalSvg.length,
-                message: "Vektorgrafik gepr\xFCft, Cutout von Vision-KI freigegeben und MBA Master-PNG (4500x5400 px) erzeugt."
-              }
-            });
-            this.persistArtworkState(task);
-            const finalized = await this.completeTaskAndEnqueue(taskId);
-            if (!finalized.success) return { success: false, error: finalized.error };
-            return { success: true, message: "Cutout von Vision-KI freigegeben, MBA Master-PNG generiert & an Queue \xFCbergeben \u2713" };
-          } else {
-            task.status = "AWAITING_SVG_REVIEW";
-            task.checkpoint = "SVG_REVIEW";
-            task.hasError = false;
-            this.addEvent(taskId, {
-              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-              type: "TASK_HANDOFF",
-              title: `\xDCbergeben an Tasks (KI Cutout-Audit empfiehlt Nacharbeit)`,
-              content: {
-                checkpoint: "SVG_REVIEW",
-                reason: auditResult.explanation,
-                detectedIssues: auditResult.detected_issues
-              }
-            });
-            this.updateTaskStatus(taskId, { status: "AWAITING_SVG_REVIEW", checkpoint: "SVG_REVIEW", hasError: false });
-            return {
-              success: false,
-              error: `KI Cutout-Audit: ${auditResult.explanation || auditResult.detected_issues && auditResult.detected_issues.join(", ") || "Unreinheiten erkannt. Bitte nachbessern."}`
-            };
-          }
+          return { success: true, message: "SVG-Freigabe gespeichert. Die Pr\xFCfung l\xE4uft im Hintergrund weiter." };
         }
         if (params2.action === "REGENERATE_VECTOR") {
           if (params2.maxColors) {
@@ -236089,6 +236023,119 @@ Beantworte die Analysefragen streng als JSON!`;
           return { success: true, message: "Task verworfen." };
         }
         throw new Error(`Ung\xFCltige Aktion: ${params2.action}`);
+      }
+      static async continueApprovedSvg(taskId) {
+        try {
+          return await PipelineExecutionCoordinator.runExclusive(taskId, async () => {
+            const task = this.getTaskLogById(taskId);
+            if (!task || task.status !== "SVG_AUDITING" || !task.svgApproval) return;
+            const { path: svgPath, sha256 } = task.svgApproval;
+            const finalSvg = import_fs90.default.readFileSync(svgPath, "utf-8");
+            if ((0, import_node_crypto9.createHash)("sha256").update(finalSvg).digest("hex") !== sha256) throw new Error("Freigegebenes SVG wurde ver\xE4ndert.");
+            const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, "_");
+            const designsDir = import_path84.default.resolve(process.cwd(), "data", "designs");
+            const ts = Date.now();
+            console.log(`[TaskLogService] \u{1F5BC}\uFE0F Rendere 4-Panel Testbild nach SVG-Freigabe f\xFCr Task ${taskId}...`);
+            const fourPanelBuffer = await SvgRenderService.render4PanelTestImage(finalSvg);
+            const fourPanelFilePath = import_path84.default.join(designsDir, `${cleanId}_4panel.png`);
+            import_fs90.default.writeFileSync(fourPanelFilePath, fourPanelBuffer);
+            task.localFourPanelImagePath = fourPanelFilePath;
+            const fourPanelUrl = `/api/v1/designs/4panel/${encodeURIComponent(taskId)}?t=${ts}`;
+            task.fourPanelImageUrl = fourPanelUrl;
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "SVG_AUDIT_REQUEST",
+              title: `Senden an LLM Vision (4-Panel Cutout-Pr\xFCfung nach Freigabe)`,
+              content: {
+                fourPanelImageUrl: fourPanelUrl,
+                quote: task.payload?.quote
+              },
+              metadata: {
+                provider: "OpenRouter Vision"
+              }
+            });
+            console.log(`[TaskLogService] \u{1F916} F\xFChre LLM Vision Cutout-Audit nach SVG-Freigabe f\xFCr Task ${taskId} durch...`);
+            const auditResult = task.svgApproval.auditApproved && task.svgAuditResult?.cutout_verdict === "APPROVED" ? task.svgAuditResult : await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
+            task.svgAuditResult = auditResult;
+            this.persistArtworkState(task);
+            if (auditResult.cutout_verdict === "APPROVED") {
+              const current = this.getTaskLogById(taskId);
+              if (current?.svgApproval?.sha256 === sha256) this.updateTaskStatus(taskId, {
+                svgApproval: { ...current.svgApproval, auditApproved: true }
+              });
+            }
+            this.addEvent(taskId, {
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              type: "SVG_AUDIT_RESPONSE",
+              title: `Empfangen von LLM Vision (${auditResult.cutout_verdict === "APPROVED" ? "Cutout Freigegeben \u2713" : "Korrektur n\xF6tig \u26A0\uFE0F"})`,
+              content: {
+                verdict: auditResult.cutout_verdict,
+                backgroundClean: auditResult.background_removed_cleanly,
+                detectedIssues: auditResult.detected_issues,
+                explanation: auditResult.explanation,
+                fourPanelImageUrl: fourPanelUrl
+              },
+              metadata: {
+                provider: "OpenRouter Vision",
+                latencyMs: auditResult.latencyMs,
+                tokens: auditResult.tokens
+              }
+            });
+            if (auditResult.cutout_verdict === "APPROVED") {
+              console.log(`[TaskLogService] \u{1F5A8}\uFE0F Rendere finales MBA Master-PNG (4500x5400 px, 300 DPI) f\xFCr Task ${taskId}...`);
+              const mbaBuffer = await SvgRenderService.renderSvgToMbaPng(finalSvg);
+              const mbaFilePath = import_path84.default.join(designsDir, `${cleanId}_mba.png`);
+              import_fs90.default.writeFileSync(mbaFilePath, mbaBuffer);
+              task.localMbaPngPath = mbaFilePath;
+              task.mbaPngUrl = `/api/v1/designs/mba-png/${encodeURIComponent(taskId)}?t=${ts}`;
+              const thumbFilePath = import_path84.default.join(designsDir, `${cleanId}_thumb.png`);
+              VisionOptimizationService.prepareThumbnailImage(mbaFilePath, thumbFilePath, 320).catch((err) => {
+                console.warn(`[TaskLogService] Background thumbnail pre-generation failed for ${taskId}:`, err.message);
+              });
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "SVG_EDIT_RESPONSE",
+                title: `SVG Design & MBA Print-PNG final freigegeben (Cutout von Vision-KI best\xE4tigt \u2713)`,
+                content: {
+                  verdict: "APPROVED",
+                  svgUrl: task.svgUrl,
+                  mbaPngUrl: task.mbaPngUrl,
+                  fourPanelImageUrl: task.fourPanelImageUrl,
+                  svgLength: finalSvg.length,
+                  message: "Vektorgrafik gepr\xFCft, Cutout von Vision-KI freigegeben und MBA Master-PNG (4500x5400 px) erzeugt."
+                }
+              });
+              this.persistArtworkState(task);
+              const finalized = await this.completeTaskAndEnqueue(taskId);
+              if (!finalized.success) return;
+              return;
+            } else {
+              task.status = "AWAITING_SVG_REVIEW";
+              task.checkpoint = "SVG_REVIEW";
+              task.hasError = false;
+              this.addEvent(taskId, {
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                type: "TASK_HANDOFF",
+                title: `\xDCbergeben an Tasks (KI Cutout-Audit empfiehlt Nacharbeit)`,
+                content: {
+                  checkpoint: "SVG_REVIEW",
+                  reason: auditResult.explanation,
+                  detectedIssues: auditResult.detected_issues
+                }
+              });
+              this.updateTaskStatus(taskId, { status: "AWAITING_SVG_REVIEW", checkpoint: "SVG_REVIEW", hasError: false });
+              return;
+            }
+          });
+        } catch (error) {
+          this.updateTaskStatus(taskId, {
+            status: "ERROR",
+            checkpoint: void 0,
+            hasError: true,
+            errorDetails: `SVG-Fortsetzung fehlgeschlagen: ${error?.message || String(error)}`
+          });
+          throw error;
+        }
       }
       /**
        * Reset editable SVG to the original untouched vector
@@ -240784,7 +240831,7 @@ var UploadScheduleService = class {
 
 // src/server/services/manualFinalizationService.ts
 var import_node_fs3 = __toESM2(require("node:fs"), 1);
-var import_node_crypto9 = require("node:crypto");
+var import_node_crypto10 = require("node:crypto");
 init_finalizationService();
 init_queueService();
 init_taskLogService();
@@ -240841,7 +240888,7 @@ var ManualFinalizationService = class {
       const result2 = await FinalizationService.finalizeForQueue({
         ...params2,
         prepareOnly: true,
-        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto9.randomUUID)()}`
+        artifactRunId: `${taskId}_rebuild_${(0, import_node_crypto10.randomUUID)()}`
       });
       if (!result2.success || !result2.resizedAssets || !result2.preparedListing) throw new Error(result2.error || "Vorbereitung fehlgeschlagen");
       const assets = result2.resizedAssets;
@@ -241104,7 +241151,7 @@ var DesignerService = class {
 // src/server/services/designerConceptService.ts
 var import_fs92 = __toESM2(require("fs"), 1);
 var import_path86 = __toESM2(require("path"), 1);
-var import_node_crypto10 = require("node:crypto");
+var import_node_crypto11 = require("node:crypto");
 init_llmService();
 init_settingsService();
 var DesignerConceptService = class {
@@ -241134,7 +241181,7 @@ var DesignerConceptService = class {
     while (selected.length < count) {
       const oldest = Math.min(...candidates.map((family2) => lastSeen.get(family2) ?? -1));
       const tied = candidates.filter((family2) => (lastSeen.get(family2) ?? -1) === oldest);
-      const family = tied[(0, import_node_crypto10.randomInt)(tied.length)];
+      const family = tied[(0, import_node_crypto11.randomInt)(tied.length)];
       selected.push(family);
       candidates.splice(candidates.indexOf(family), 1);
       if (candidates.length === 0) candidates.push(...this.RANDOM_FAMILIES);

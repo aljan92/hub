@@ -111,6 +111,7 @@ export class TaskRecoveryService {
     'UPDATE_TM_CHECKED',
     'TRANSLATING_LISTING',
     'VECTORIZING_DESIGN',
+    'SVG_AUDITING',
     'FINALIZING',
     'UPDATE_TRANSLATED'
   ];
@@ -900,6 +901,14 @@ export class TaskRecoveryService {
 
       case 'FINALIZING': {
         return await TaskLogService.completeTaskAndEnqueue(taskId);
+      }
+
+      case 'SVG_AUDITING': {
+        await TaskLogService.continueApprovedSvg(taskId);
+        const resumed = TaskLogService.getTaskLogById(taskId);
+        return resumed?.status === 'ERROR'
+          ? { success: false, error: resumed.errorDetails || 'SVG-Fortsetzung fehlgeschlagen' }
+          : { success: true, pausedAtCheckpoint: resumed?.status === 'AWAITING_SVG_REVIEW' ? 'SVG_REVIEW' : undefined };
       }
 
       case 'VECTORIZING_DESIGN': {

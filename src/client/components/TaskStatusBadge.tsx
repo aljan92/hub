@@ -80,6 +80,17 @@ export const getTaskStatusInfo = (task: DesignTaskLog | TaskSummary): TaskStatus
     };
   }
 
+  if (task.status === 'SVG_AUDITING') {
+    return {
+      label: 'SVG-Freigabe gespeichert · Cutout-Prüfung läuft…',
+      badgeClass: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
+      dotBg: 'bg-cyan-400',
+      category: 'SYSTEM',
+      icon: <RefreshCw className="w-3 h-3 animate-spin" />,
+      isAnimated: true
+    };
+  }
+
   // 3. Finalizing State
   if (task.status === 'FINALIZING') {
     return {

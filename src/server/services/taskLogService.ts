@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { createHash } from 'node:crypto';
 import { loadSettings, resolveImageProvider, getEffectiveGptImageSettings } from './settingsService';
 import { SystemPromptService } from './systemPromptService';
 import { IdeogramService, ExpiredIdeogramImageError } from './ideogramService';
@@ -2902,18 +2903,87 @@ export class TaskLogService {
     const designsDir = path.resolve(process.cwd(), 'data', 'designs');
 
     if (params.action === 'APPROVE') {
-      if (params.editedSvgContent) {
-        if (!fs.existsSync(designsDir)) {
-          try { fs.mkdirSync(designsDir, { recursive: true }); } catch (e) {}
+      const finalSvg = task.svgContent || params.editedSvgContent || '';
+      const acceptedSvg = params.editedSvgContent || finalSvg;
+      if (!acceptedSvg.trim()) throw new Error('Freizugebendes SVG fehlt.');
+      fs.mkdirSync(designsDir, { recursive: true });
+      const sha256 = createHash('sha256').update(acceptedSvg).digest('hex');
+      const svgFilePath = path.join(designsDir, `${cleanId}_review_${sha256}.svg`);
+      if (!fs.existsSync(svgFilePath)) fs.writeFileSync(svgFilePath, acceptedSvg, 'utf-8');
+      const saved = this.updateTaskStatus(taskId, {
+        status: 'SVG_AUDITING', checkpoint: undefined, hasError: false, errorDetails: undefined,
+        svgContent: acceptedSvg, localSvgPath: svgFilePath,
+        svgUrl: `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`,
+        svgApproval: { path: svgFilePath, sha256, acceptedAt: new Date().toISOString() }
+      });
+      if (!saved || saved.status !== 'SVG_AUDITING') throw new Error('SVG-Freigabe konnte nicht gespeichert werden.');
+      this.addEvent(taskId, { timestamp: new Date().toISOString(), type: 'SVG_EDIT_RESPONSE',
+        title: 'SVG-Freigabe gespeichert; Cutout-Prüfung folgt', content: { sha256 } });
+      setImmediate(() => { void this.continueApprovedSvg(taskId).catch(error => {
+        console.error(`[TaskLogService] SVG continuation failed for ${taskId}:`, error);
+      }); });
+      return { success: true, message: 'SVG-Freigabe gespeichert. Die Prüfung läuft im Hintergrund weiter.' };
+    }
+
+    if (params.action === 'REGENERATE_VECTOR') {
+      if (params.maxColors) {
+        if (!task.customAnswers) task.customAnswers = {};
+        task.customAnswers.maxColors = params.maxColors;
+      }
+      task.status = 'VECTORIZING_DESIGN';
+      task.checkpoint = undefined;
+      task.hasError = false;
+
+      if (!this.updateTaskStatus(taskId, task)) throw new Error('Neu-Vektorisierung konnte nicht gespeichert werden.');
+
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'VECTORIZE_REQUEST',
+        title: `Vektorisierung erneut angefordert (Human Loop: Farbanzahl angepasst)`,
+        content: {
+          maxColors: params.maxColors || task.customAnswers?.maxColors || 2,
+          reason: 'Manuell in Tasks zur Neu-Vektorisierung übergeben'
         }
-        const svgFilePath = path.join(designsDir, `${cleanId}.svg`);
-        fs.writeFileSync(svgFilePath, params.editedSvgContent, 'utf-8');
-        task.svgContent = params.editedSvgContent;
-        task.localSvgPath = svgFilePath;
-        task.svgUrl = `/api/v1/designs/svg/${encodeURIComponent(taskId)}?t=${Date.now()}`;
+      });
+
+      this.vectorizeDesignTask(taskId).catch(err => {
+        console.error(`[TaskLogService] Re-vectorize failed for task ${taskId}:`, err);
+      });
+
+      return { success: true, message: 'Vektorisierung wird neu ausgeführt.' };
+    }
+
+    if (params.action === 'REJECT') {
+      if (!this.updateTaskStatus(taskId, { status: 'CANCELLED', checkpoint: undefined, hasError: false })) {
+        throw new Error('Task konnte nicht verworfen werden.');
       }
 
-      const finalSvg = task.svgContent || params.editedSvgContent || '';
+      this.addEvent(taskId, {
+        timestamp: new Date().toISOString(),
+        type: 'SVG_EDIT_RESPONSE',
+        title: `Task in SVG-Prüfung abgelehnt & geschlossen (Human Loop)`,
+        content: {
+          verdict: 'REJECTED',
+          reason: 'Design / Vektorisierung manuell im Tasks-Workspace verworfen.'
+        }
+      });
+
+      return { success: true, message: 'Task verworfen.' };
+    }
+
+    throw new Error(`Ungültige Aktion: ${params.action}`);
+  }
+
+  static async continueApprovedSvg(taskId: string): Promise<void> {
+    try {
+    return await PipelineExecutionCoordinator.runExclusive(taskId, async () => {
+      const task = this.getTaskLogById(taskId);
+      if (!task || task.status !== 'SVG_AUDITING' || !task.svgApproval) return;
+      const { path: svgPath, sha256 } = task.svgApproval;
+      const finalSvg = fs.readFileSync(svgPath, 'utf-8');
+      if (createHash('sha256').update(finalSvg).digest('hex') !== sha256) throw new Error('Freigegebenes SVG wurde verändert.');
+      const cleanId = taskId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const designsDir = path.resolve(process.cwd(), 'data', 'designs');
       const ts = Date.now();
 
       // 1. Render 4-Panel Verification Image (2048x2048 px on White/Black/Red/Slate)
@@ -2941,9 +3011,15 @@ export class TaskLogService {
 
       // 3. Run LLM Vision Cutout Audit
       console.log(`[TaskLogService] 🤖 Führe LLM Vision Cutout-Audit nach SVG-Freigabe für Task ${taskId} durch...`);
-      const auditResult = await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
+      const auditResult = task.svgApproval.auditApproved && task.svgAuditResult?.cutout_verdict === 'APPROVED'
+        ? task.svgAuditResult : await LLMService.auditSvgCutout(fourPanelFilePath, task.payload?.quote);
       task.svgAuditResult = auditResult;
-      this.persistArtworkState(task);
+      const savedAudit = this.updateTaskStatus(taskId, {
+        localFourPanelImagePath: fourPanelFilePath, fourPanelImageUrl: fourPanelUrl,
+        svgAuditResult: auditResult,
+        svgApproval: { ...task.svgApproval, auditApproved: auditResult.cutout_verdict === 'APPROVED' }
+      });
+      if (!savedAudit) throw new Error('Cutout-Befund konnte nicht gespeichert werden.');
 
       // 4. Log: Empfangen von LLM Vision Cutout Audit
       this.addEvent(taskId, {
@@ -2997,9 +3073,8 @@ export class TaskLogService {
 
         this.persistArtworkState(task);
         const finalized = await this.completeTaskAndEnqueue(taskId);
-        if (!finalized.success) return { success: false, error: finalized.error };
-
-        return { success: true, message: 'Cutout von Vision-KI freigegeben, MBA Master-PNG generiert & an Queue übergeben ✓' };
+        if (!finalized.success) return;
+        return;
       } else {
         // Cutout needs work - remain in Checkpoint 4
         task.status = 'AWAITING_SVG_REVIEW';
@@ -3019,60 +3094,14 @@ export class TaskLogService {
 
         this.updateTaskStatus(taskId, { status: 'AWAITING_SVG_REVIEW', checkpoint: 'SVG_REVIEW', hasError: false });
 
-        return {
-          success: false,
-          error: `KI Cutout-Audit: ${auditResult.explanation || (auditResult.detected_issues && auditResult.detected_issues.join(', ')) || 'Unreinheiten erkannt. Bitte nachbessern.'}`
-        };
+        return;
       }
+    });
+    } catch (error: any) {
+      this.updateTaskStatus(taskId, { status: 'ERROR', checkpoint: undefined, hasError: true,
+        errorDetails: `SVG-Fortsetzung fehlgeschlagen: ${error?.message || String(error)}` });
+      throw error;
     }
-
-    if (params.action === 'REGENERATE_VECTOR') {
-      if (params.maxColors) {
-        if (!task.customAnswers) task.customAnswers = {};
-        task.customAnswers.maxColors = params.maxColors;
-      }
-      task.status = 'VECTORIZING_DESIGN';
-      task.checkpoint = undefined;
-      task.hasError = false;
-
-      if (!this.updateTaskStatus(taskId, task)) throw new Error('Neu-Vektorisierung konnte nicht gespeichert werden.');
-
-      this.addEvent(taskId, {
-        timestamp: new Date().toISOString(),
-        type: 'VECTORIZE_REQUEST',
-        title: `Vektorisierung erneut angefordert (Human Loop: Farbanzahl angepasst)`,
-        content: {
-          maxColors: params.maxColors || task.customAnswers?.maxColors || 2,
-          reason: 'Manuell in Tasks zur Neu-Vektorisierung übergeben'
-        }
-      });
-
-      this.vectorizeDesignTask(taskId).catch(err => {
-        console.error(`[TaskLogService] Re-vectorize failed for task ${taskId}:`, err);
-      });
-
-      return { success: true, message: 'Vektorisierung wird neu ausgeführt.' };
-    }
-
-    if (params.action === 'REJECT') {
-      if (!this.updateTaskStatus(taskId, { status: 'CANCELLED', checkpoint: undefined, hasError: false })) {
-        throw new Error('Task konnte nicht verworfen werden.');
-      }
-
-      this.addEvent(taskId, {
-        timestamp: new Date().toISOString(),
-        type: 'SVG_EDIT_RESPONSE',
-        title: `Task in SVG-Prüfung abgelehnt & geschlossen (Human Loop)`,
-        content: {
-          verdict: 'REJECTED',
-          reason: 'Design / Vektorisierung manuell im Tasks-Workspace verworfen.'
-        }
-      });
-
-      return { success: true, message: 'Task verworfen.' };
-    }
-
-    throw new Error(`Ungültige Aktion: ${params.action}`);
   }
 
   /**

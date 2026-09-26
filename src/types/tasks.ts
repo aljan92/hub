@@ -45,6 +45,7 @@ export type TaskStatus =
   | 'AWAITING_TM_REVIEW'
   | 'TRANSLATING_LISTING'
   | 'VECTORIZING_DESIGN'
+  | 'SVG_AUDITING'
   | 'FINALIZING'
   | 'AWAITING_SVG_REVIEW'
   | 'AWAITING_RECOVERY_REVIEW'
@@ -152,6 +153,9 @@ export interface DesignTaskLog {
   grid2x2Url?: string;
   /** Persisted review concurrency token; unrelated logs do not change it. */
   reviewVersion?: string;
+  /** Accepted SVG candidate, durable before its expensive cutout audit starts. */
+  svgApproval?: { path: string; sha256: string; acceptedAt: string; auditApproved?: boolean };
+  svgAuditResult?: { cutout_verdict?: string; background_removed_cleanly?: boolean; detected_issues?: string[]; explanation?: string; latencyMs?: number; tokens?: any };
   id: string;
   counter: number;
   source: TaskSource;
